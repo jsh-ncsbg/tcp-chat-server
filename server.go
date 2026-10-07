@@ -97,6 +97,12 @@ func (s *Server) leave(username string, roomID RoomID) {
 	delete(s.memberships[roomID], username)
 }
 
+func (s *Server) isMember(username string, roomID RoomID) bool {
+	// assume caller has guards
+	_, ok := s.memberships[roomID][username]
+	return ok
+}
+
 func (s *Server) RoomOf(username string) *Room {
 	for _, room := range s.rooms {
 		_, isMember := s.memberships[room.ID()][username]

@@ -89,10 +89,18 @@ func TestJoin(t *testing.T) {
 			require.NoError(t, err)
 		}
 
+		var oldRoom *Room
 		for _, room := range rooms {
 			err := server.Join(client.Username(), room.ID())
 			require.NoError(t, err)
 			require.Equal(t, room, server.RoomOf(client.Username()))
+
+			// check if membership with old room is gone
+			if oldRoom != nil {
+				assert.False(t, server.isMember(client.Username(), oldRoom.ID()))
+			}
+
+			oldRoom = room
 		}
 	})
 
