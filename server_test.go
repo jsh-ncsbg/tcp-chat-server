@@ -111,3 +111,32 @@ func TestLeave(t *testing.T) {
 		assert.ErrorIs(t, err, ErrRoomNotFound)
 	})
 }
+
+func TestDisconnect(t *testing.T) {
+	t.Run("remove client from registered clients", func(t *testing.T) {
+		server := NewServer()
+		client := NewClient("Josh")
+		_ = server.Register(client)
+
+		err := server.Disconnect(client.Username())
+		require.NoError(t, err)
+
+		assert.False(t, server.IsRegistered(client.Username()))
+	})
+
+	t.Run("remove membership", func(t *testing.T) {
+		server := NewServer()
+		client := NewClient("Josh")
+		room := NewRoom("general")
+
+		_ = server.AddRoom(room)
+		_ = server.Register(client)
+
+		// membership created
+		_ = server.Join(client.Username(), room.ID())
+
+		err := server.Disconnect(client.Username())
+		require.NoError(t, err)
+		assert.Nil(t, server.RoomOf(client.Username()))
+	})
+}

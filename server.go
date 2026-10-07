@@ -84,8 +84,13 @@ func (s *Server) Leave(username string, roomID RoomID) error {
 		return fmt.Errorf("leave: %w", ErrRoomNotFound)
 	}
 
-	delete(s.memberships[roomID], username)
+	s.leave(username, roomID)
 	return nil
+}
+
+func (s *Server) leave(username string, roomID RoomID) {
+	// assumes caller has guards
+	delete(s.memberships[roomID], username)
 }
 
 func (s *Server) RoomOf(username string) *Room {
@@ -95,5 +100,20 @@ func (s *Server) RoomOf(username string) *Room {
 			return room
 		}
 	}
+	return nil
+}
+
+func (s *Server) Disconnect(username string) error {
+	if !s.IsRegistered(username) {
+		return fmt.Errorf("disconnect: %w", ErrClientNotFound)
+	}
+
+	connectedRoom := s.RoomOf(username)
+	if connectedRoom != nil {
+		s.leave(username, connectedRoom.ID())
+	}
+
+	delete(s.clients, username)
+
 	return nil
 }
