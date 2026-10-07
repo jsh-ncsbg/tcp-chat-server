@@ -1,15 +1,17 @@
 package main
 
+type RoomID string
+
 type Room struct {
-	name string
+	id RoomID
 }
 
-func NewRoom(name string) *Room {
+func NewRoom(id RoomID) *Room {
 	return &Room{
-		name: name,
+		id: id,
 	}
 }
 
-func (r *Room) Name() string {
-	return r.name
+func (r *Room) ID() RoomID {
+	return r.id
 }

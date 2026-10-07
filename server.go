@@ -5,17 +5,17 @@ import (
 )
 
 var ErrDuplicateUsername = errors.New("username already exists")
-var ErrDuplicateRoomName = errors.New("room name already exists")
+var ErrDuplicateRoom = errors.New("room already exists")
 
 type Server struct {
 	clients map[string]*Client
-	rooms   map[string]*Room
+	rooms   map[RoomID]*Room
 }
 
 func NewServer() *Server {
 	return &Server{
 		clients: make(map[string]*Client),
-		rooms:   make(map[string]*Room),
+		rooms:   make(map[RoomID]*Room),
 	}
 }
 
@@ -34,15 +34,15 @@ func (s *Server) IsRegistered(username string) bool {
 }
 
 func (s *Server) AddRoom(room *Room) error {
-	_, ok := s.rooms[room.Name()]
+	_, ok := s.rooms[room.ID()]
 	if ok {
-		return ErrDuplicateRoomName
+		return ErrDuplicateRoom
 	}
-	s.rooms[room.Name()] = room
+	s.rooms[room.ID()] = room
 	return nil
 }
 
-func (s *Server) RoomExists(name string) bool {
-	_, ok := s.rooms[name]
+func (s *Server) RoomExists(id RoomID) bool {
+	_, ok := s.rooms[id]
 	return ok
 }
