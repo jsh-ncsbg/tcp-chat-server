@@ -66,27 +66,17 @@ func TestJoin(t *testing.T) {
 		assert.Equal(t, room, got)
 	})
 
-	t.Run("invalid client returns an error", func(t *testing.T) {
+	t.Run("unknown client or room returns an error", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
 		_ = server.AddRoom(room)
-		// _ = server.Register(client)
-
-		err := server.Join(client.Username(), room.ID())
-		assert.ErrorIs(t, err, ErrClientNotFound)
-	})
-
-	t.Run("invalid room returns an error", func(t *testing.T) {
-		server := NewServer()
-		room := NewRoom("general")
-		client := NewClient("Josh")
-
-		// _ = server.AddRoom(room)
 		_ = server.Register(client)
 
-		err := server.Join(client.Username(), room.ID())
+		err := server.Join("unknown", room.ID())
+		assert.ErrorIs(t, err, ErrClientNotFound)
+		err = server.Join(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
 	})
 }
