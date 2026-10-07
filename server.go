@@ -71,6 +71,10 @@ func (s *Server) Join(username string, roomID RoomID) error {
 		return fmt.Errorf("join: %w", ErrRoomNotFound)
 	}
 
+	if connectedRoom := s.RoomOf(username); connectedRoom != nil {
+		s.leave(username, connectedRoom.ID())
+	}
+
 	s.memberships[roomID][username] = struct{}{}
 	return nil
 }

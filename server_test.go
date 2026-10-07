@@ -66,6 +66,28 @@ func TestJoin(t *testing.T) {
 		assert.Equal(t, room, got)
 	})
 
+	t.Run("client can switch rooms", func(t *testing.T) {
+		server := NewServer()
+
+		client := NewClient("Josh")
+		_ = server.Register(client)
+
+		rooms := []*Room{}
+		for _, roomID := range []string{"A", "B", "C"} {
+			curr := NewRoom(RoomID(roomID))
+			rooms = append(rooms, curr)
+
+			err := server.AddRoom(curr)
+			require.NoError(t, err)
+		}
+
+		for _, room := range rooms {
+			err := server.Join(client.Username(), room.ID())
+			require.NoError(t, err)
+			require.Equal(t, room, server.RoomOf(client.Username()))
+		}
+	})
+
 	t.Run("unknown client or room returns an error", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
