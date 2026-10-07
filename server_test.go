@@ -38,4 +38,14 @@ func TestServer(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, server.RoomExists(room.Name()))
 	})
+
+	t.Run("reject duplicate room name", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+		dup := NewRoom("general")
+
+		_ = server.AddRoom(room)
+		err := server.AddRoom(dup)
+		assert.ErrorIs(t, err, ErrDuplicateRoomName)
+	})
 }

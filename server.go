@@ -5,6 +5,7 @@ import (
 )
 
 var ErrDuplicateUsername = errors.New("duplicate username")
+var ErrDuplicateRoomName = errors.New("room name already exists")
 
 type Server struct {
 	clients map[string]*Client
@@ -33,6 +34,10 @@ func (s *Server) IsRegistered(username string) bool {
 }
 
 func (s *Server) AddRoom(room *Room) error {
+	_, ok := s.rooms[room.Name()]
+	if ok {
+		return ErrDuplicateRoomName
+	}
 	s.rooms[room.Name()] = room
 	return nil
 }
