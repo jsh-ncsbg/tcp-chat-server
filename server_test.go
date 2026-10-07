@@ -29,4 +29,13 @@ func TestServer(t *testing.T) {
 
 		assert.ErrorIs(t, err, ErrDuplicateUsername)
 	})
+
+	t.Run("room creation", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+
+		err := server.AddRoom(room)
+		require.NoError(t, err)
+		assert.True(t, server.RoomExists(room.Name()))
+	})
 }
