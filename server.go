@@ -75,6 +75,19 @@ func (s *Server) Join(username string, roomID RoomID) error {
 	return nil
 }
 
+func (s *Server) Leave(username string, roomID RoomID) error {
+	if !s.IsRegistered(username) {
+		return fmt.Errorf("leave: %w", ErrClientNotFound)
+	}
+
+	if !s.RoomExists(roomID) {
+		return fmt.Errorf("leave: %w", ErrRoomNotFound)
+	}
+
+	delete(s.memberships[roomID], username)
+	return nil
+}
+
 func (s *Server) RoomOf(username string) *Room {
 	for _, room := range s.rooms {
 		_, isMember := s.memberships[room.ID()][username]
