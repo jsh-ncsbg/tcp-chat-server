@@ -4,7 +4,7 @@ import (
 	"errors"
 )
 
-var ErrDuplicateUsername = errors.New("duplicate username")
+var ErrDuplicateUsername = errors.New("username already exists")
 var ErrDuplicateRoomName = errors.New("room name already exists")
 
 type Server struct {
