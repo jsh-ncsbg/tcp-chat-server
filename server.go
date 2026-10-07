@@ -105,8 +105,7 @@ func (s *Server) isMember(username string, roomID RoomID) bool {
 
 func (s *Server) RoomOf(username string) *Room {
 	for _, room := range s.rooms {
-		_, isMember := s.memberships[room.ID()][username]
-		if isMember {
+		if s.isMember(username, room.ID()) {
 			return room
 		}
 	}
