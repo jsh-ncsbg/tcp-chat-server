@@ -49,3 +49,44 @@ func TestServer(t *testing.T) {
 		assert.ErrorIs(t, err, ErrDuplicateRoom)
 	})
 }
+
+func TestJoin(t *testing.T) {
+	t.Run("client can join room", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+		client := NewClient("Josh")
+
+		_ = server.AddRoom(room)
+		_ = server.Register(client)
+
+		err := server.Join(client.Username(), room.ID())
+		require.NoError(t, err)
+
+		got := server.RoomOf(client.Username())
+		assert.Equal(t, room, got)
+	})
+
+	t.Run("invalid client returns an error", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+		client := NewClient("Josh")
+
+		_ = server.AddRoom(room)
+		// _ = server.Register(client)
+
+		err := server.Join(client.Username(), room.ID())
+		assert.ErrorIs(t, err, ErrClientNotFound)
+	})
+
+	t.Run("invalid room returns an error", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+		client := NewClient("Josh")
+
+		// _ = server.AddRoom(room)
+		_ = server.Register(client)
+
+		err := server.Join(client.Username(), room.ID())
+		assert.ErrorIs(t, err, ErrRoomNotFound)
+	})
+}
