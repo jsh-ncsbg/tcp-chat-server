@@ -24,9 +24,10 @@ func TestServer(t *testing.T) {
 		client := NewClient("Josh")
 		dup := NewClient("Josh")
 
-		_ = server.Register(client)
-		err := server.Register(dup)
+		err := server.Register(client)
+		require.NoError(t, err)
 
+		err = server.Register(dup)
 		assert.ErrorIs(t, err, ErrDuplicateUsername)
 	})
 
@@ -44,8 +45,10 @@ func TestServer(t *testing.T) {
 		room := NewRoom("general")
 		dup := NewRoom("general")
 
-		_ = server.AddRoom(room)
-		err := server.AddRoom(dup)
+		err := server.AddRoom(room)
+		require.NoError(t, err)
+
+		err = server.AddRoom(dup)
 		assert.ErrorIs(t, err, ErrDuplicateRoom)
 	})
 }
@@ -56,10 +59,13 @@ func TestJoin(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		_ = server.AddRoom(room)
-		_ = server.Register(client)
+		err := server.AddRoom(room)
+		require.NoError(t, err)
 
-		err := server.Join(client.Username(), room.ID())
+		err = server.Register(client)
+		require.NoError(t, err)
+
+		err = server.Join(client.Username(), room.ID())
 		require.NoError(t, err)
 
 		got := server.RoomOf(client.Username())
@@ -70,7 +76,9 @@ func TestJoin(t *testing.T) {
 		server := NewServer()
 
 		client := NewClient("Josh")
-		_ = server.Register(client)
+
+		err := server.Register(client)
+		require.NoError(t, err)
 
 		rooms := []*Room{}
 		for _, roomID := range []string{"A", "B", "C"} {
@@ -93,10 +101,13 @@ func TestJoin(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		_ = server.AddRoom(room)
-		_ = server.Register(client)
+		err := server.AddRoom(room)
+		require.NoError(t, err)
 
-		err := server.Join("unknown", room.ID())
+		err = server.Register(client)
+		require.NoError(t, err)
+
+		err = server.Join("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
 		err = server.Join(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
@@ -109,11 +120,16 @@ func TestLeave(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		_ = server.AddRoom(room)
-		_ = server.Register(client)
-		_ = server.Join(client.Username(), room.ID())
+		err := server.AddRoom(room)
+		require.NoError(t, err)
 
-		err := server.Leave(client.Username(), room.ID())
+		err = server.Register(client)
+		require.NoError(t, err)
+
+		err = server.Join(client.Username(), room.ID())
+		require.NoError(t, err)
+
+		err = server.Leave(client.Username(), room.ID())
 		assert.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.Username()))
 	})
@@ -123,11 +139,16 @@ func TestLeave(t *testing.T) {
 		client := NewClient("Josh")
 		room := NewRoom("general")
 
-		_ = server.AddRoom(room)
-		_ = server.Register(client)
-		_ = server.Join(client.Username(), room.ID())
+		err := server.AddRoom(room)
+		require.NoError(t, err)
 
-		err := server.Leave("unknown", room.ID())
+		err = server.Register(client)
+		require.NoError(t, err)
+
+		err = server.Join(client.Username(), room.ID())
+		require.NoError(t, err)
+
+		err = server.Leave("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
 		err = server.Leave(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
@@ -138,9 +159,11 @@ func TestDisconnect(t *testing.T) {
 	t.Run("remove client from registered clients", func(t *testing.T) {
 		server := NewServer()
 		client := NewClient("Josh")
-		_ = server.Register(client)
 
-		err := server.Disconnect(client.Username())
+		err := server.Register(client)
+		require.NoError(t, err)
+
+		err = server.Disconnect(client.Username())
 		require.NoError(t, err)
 
 		assert.False(t, server.IsRegistered(client.Username()))
@@ -151,13 +174,17 @@ func TestDisconnect(t *testing.T) {
 		client := NewClient("Josh")
 		room := NewRoom("general")
 
-		_ = server.AddRoom(room)
-		_ = server.Register(client)
+		err := server.AddRoom(room)
+		require.NoError(t, err)
+
+		err = server.Register(client)
+		require.NoError(t, err)
 
 		// membership created
-		_ = server.Join(client.Username(), room.ID())
+		err = server.Join(client.Username(), room.ID())
+		require.NoError(t, err)
 
-		err := server.Disconnect(client.Username())
+		err = server.Disconnect(client.Username())
 		require.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.Username()))
 	})
