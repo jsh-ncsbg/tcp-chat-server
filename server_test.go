@@ -197,6 +197,8 @@ func TestBroadcast(t *testing.T) {
 	})
 }
 
+// ==== HELPER FUNCTIONS
+
 func registerClients(t testing.TB, s *Server, clients ...Client) {
 	t.Helper()
 	for _, c := range clients {
@@ -236,6 +238,8 @@ func newFakeClient(id ClientID, u string) *fakeClient {
 		inbox: []string{},
 	}
 }
+
+// === MOCKS / SPIES / FAKES
 
 type fakeClient struct {
 	id    ClientID
