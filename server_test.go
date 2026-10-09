@@ -62,11 +62,7 @@ func TestJoin(t *testing.T) {
 		err := server.AddRoom(room)
 		require.NoError(t, err)
 
-		err = server.Register(client)
-		require.NoError(t, err)
-
-		err = server.Join(client.Username(), room.ID())
-		require.NoError(t, err)
+		registerAndJoin(t, server, room, client)
 
 		got := server.RoomOf(client.Username())
 		assert.Equal(t, room, got)
@@ -117,6 +113,7 @@ func TestJoin(t *testing.T) {
 
 		err = server.Join("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
+
 		err = server.Join(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
 	})
@@ -131,11 +128,7 @@ func TestLeave(t *testing.T) {
 		err := server.AddRoom(room)
 		require.NoError(t, err)
 
-		err = server.Register(client)
-		require.NoError(t, err)
-
-		err = server.Join(client.Username(), room.ID())
-		require.NoError(t, err)
+		registerAndJoin(t, server, room, client)
 
 		err = server.Leave(client.Username(), room.ID())
 		assert.NoError(t, err)
@@ -150,11 +143,7 @@ func TestLeave(t *testing.T) {
 		err := server.AddRoom(room)
 		require.NoError(t, err)
 
-		err = server.Register(client)
-		require.NoError(t, err)
-
-		err = server.Join(client.Username(), room.ID())
-		require.NoError(t, err)
+		registerAndJoin(t, server, room, client)
 
 		err = server.Leave("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
@@ -185,15 +174,21 @@ func TestDisconnect(t *testing.T) {
 		err := server.AddRoom(room)
 		require.NoError(t, err)
 
-		err = server.Register(client)
-		require.NoError(t, err)
-
-		// membership created
-		err = server.Join(client.Username(), room.ID())
-		require.NoError(t, err)
+		registerAndJoin(t, server, room, client)
 
 		err = server.Disconnect(client.Username())
 		require.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.Username()))
 	})
+}
+
+func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...*Client) {
+	t.Helper()
+	for _, c := range clients {
+		err := s.Register(c)
+		require.NoError(t, err)
+
+		err = s.Join(c.Username(), room.ID())
+		require.NoError(t, err)
+	}
 }
