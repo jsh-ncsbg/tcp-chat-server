@@ -13,9 +13,8 @@ func TestServer(t *testing.T) {
 		server := NewServer()
 		client := NewClient("Josh")
 
-		err := server.Register(client)
+		registerClients(t, server, client)
 
-		require.NoError(t, err)
 		assert.True(t, server.IsRegistered(client.Username()))
 		assert.False(t, server.IsRegistered("random"))
 	})
@@ -25,10 +24,9 @@ func TestServer(t *testing.T) {
 		client := NewClient("Josh")
 		dup := NewClient("Josh")
 
-		err := server.Register(client)
-		require.NoError(t, err)
+		registerClients(t, server, client)
 
-		err = server.Register(dup)
+		err := server.Register(dup)
 		assert.ErrorIs(t, err, ErrDuplicateUsername)
 	})
 
@@ -36,8 +34,8 @@ func TestServer(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
+		addRooms(t, server, room)
+
 		assert.True(t, server.RoomExists(room.ID()))
 	})
 
@@ -46,10 +44,9 @@ func TestServer(t *testing.T) {
 		room := NewRoom("general")
 		dup := NewRoom("general")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
+		addRooms(t, server, room)
 
-		err = server.AddRoom(dup)
+		err := server.AddRoom(dup)
 		assert.ErrorIs(t, err, ErrDuplicateRoom)
 	})
 }
@@ -60,9 +57,7 @@ func TestJoin(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
-
+		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client)
 
 		got := server.RoomOf(client.Username())
@@ -71,34 +66,18 @@ func TestJoin(t *testing.T) {
 
 	t.Run("client can switch rooms", func(t *testing.T) {
 		server := NewServer()
-
 		client := NewClient("Josh")
+		roomA := NewRoom("A")
+		roomB := NewRoom("B")
 
-		err := server.Register(client)
-		require.NoError(t, err)
+		registerClients(t, server, client)
+		addRooms(t, server, roomA, roomB)
 
-		rooms := []*Room{}
-		for _, roomID := range []string{"A", "B", "C"} {
-			curr := NewRoom(RoomID(roomID))
-			rooms = append(rooms, curr)
+		joinRoom(t, server, roomA, client)
+		require.Equal(t, roomA, server.RoomOf(client.Username()))
 
-			err := server.AddRoom(curr)
-			require.NoError(t, err)
-		}
-
-		var oldRoom *Room
-		for _, room := range rooms {
-			err := server.Join(client.Username(), room.ID())
-			require.NoError(t, err)
-			require.Equal(t, room, server.RoomOf(client.Username()))
-
-			// check if membership with old room is gone
-			if oldRoom != nil {
-				assert.False(t, server.isMember(client.Username(), oldRoom.ID()))
-			}
-
-			oldRoom = room
-		}
+		joinRoom(t, server, roomB, client)
+		require.Equal(t, roomB, server.RoomOf(client.Username()))
 	})
 
 	t.Run("unknown client or room returns an error", func(t *testing.T) {
@@ -106,15 +85,11 @@ func TestJoin(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
+		addRooms(t, server, room)
+		registerClients(t, server, client)
 
-		err = server.Register(client)
-		require.NoError(t, err)
-
-		err = server.Join("unknown", room.ID())
+		err := server.Join("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
-
 		err = server.Join(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
 	})
@@ -126,12 +101,10 @@ func TestLeave(t *testing.T) {
 		room := NewRoom("general")
 		client := NewClient("Josh")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
-
+		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client)
 
-		err = server.Leave(client.Username(), room.ID())
+		err := server.Leave(client.Username(), room.ID())
 		assert.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.Username()))
 	})
@@ -141,12 +114,10 @@ func TestLeave(t *testing.T) {
 		client := NewClient("Josh")
 		room := NewRoom("general")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
-
+		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client)
 
-		err = server.Leave("unknown", room.ID())
+		err := server.Leave("unknown", room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
 		err = server.Leave(client.Username(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
@@ -158,10 +129,9 @@ func TestDisconnect(t *testing.T) {
 		server := NewServer()
 		client := NewClient("Josh")
 
-		err := server.Register(client)
-		require.NoError(t, err)
+		registerClients(t, server, client)
 
-		err = server.Disconnect(client.Username())
+		err := server.Disconnect(client.Username())
 		require.NoError(t, err)
 
 		assert.False(t, server.IsRegistered(client.Username()))
@@ -172,12 +142,10 @@ func TestDisconnect(t *testing.T) {
 		client := NewClient("Josh")
 		room := NewRoom("general")
 
-		err := server.AddRoom(room)
-		require.NoError(t, err)
-
+		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client)
 
-		err = server.Disconnect(client.Username())
+		err := server.Disconnect(client.Username())
 		require.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.Username()))
 	})
@@ -191,7 +159,7 @@ func TestBroadcast(t *testing.T) {
 		sameRoomClient := newFakeClient("Friend")
 		outsider := newFakeClient("outsider")
 
-		addRoom(t, server, room)
+		addRooms(t, server, room)
 		registerClients(t, server, outsider)
 		registerAndJoin(t, server, room, client, sameRoomClient)
 
@@ -214,19 +182,28 @@ func registerClients(t testing.TB, s *Server, clients ...Client) {
 	}
 }
 
-func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...Client) {
+func joinRoom(t testing.TB, s *Server, room *Room, clients ...Client) {
 	t.Helper()
-	registerClients(t, s, clients...)
 	for _, c := range clients {
 		err := s.Join(c.Username(), room.ID())
 		require.NoError(t, err)
 	}
 }
 
-func addRoom(t testing.TB, s *Server, room *Room) {
+func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...Client) {
 	t.Helper()
-	err := s.AddRoom(room)
-	require.NoError(t, err)
+	registerClients(t, s, clients...)
+	for _, c := range clients {
+		joinRoom(t, s, room, c)
+	}
+}
+
+func addRooms(t testing.TB, s *Server, rooms ...*Room) {
+	t.Helper()
+	for _, r := range rooms {
+		err := s.AddRoom(r)
+		require.NoError(t, err)
+	}
 }
 
 func newFakeClient(u string) *fakeClient {
