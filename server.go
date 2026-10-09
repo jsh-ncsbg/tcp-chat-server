@@ -171,6 +171,17 @@ func (s *Server) HandleMessage(clientID ClientID, content string) {
 	}
 
 	room := s.RoomOf(clientID)
+	if room == nil {
+		err := sender.Deliver(Message{
+			From:    "server",
+			Content: ErrRoomNotFound.Error(),
+		})
+		if err != nil {
+			log.Printf("client deliver: %v\n", err)
+		}
+		return
+	}
+
 	clients := s.membersOf(room.ID())
 
 	for _, c := range clients {

@@ -183,6 +183,18 @@ func TestBroadcast(t *testing.T) {
 		got := client.inbox[0]
 		assert.Equal(t, expected, got)
 	})
+
+	t.Run("clients with no room are declined", func(t *testing.T) {
+		server := NewServer()
+		client := newFakeClient(1, "Josh")
+
+		registerClients(t, server, client)
+		server.HandleMessage(client.ID(), "sample message")
+
+		expected := "server: " + ErrRoomNotFound.Error()
+		got := client.inbox[0]
+		assert.Equal(t, expected, got)
+	})
 }
 
 func registerClients(t testing.TB, s *Server, clients ...Client) {
