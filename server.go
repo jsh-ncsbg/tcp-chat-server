@@ -14,7 +14,7 @@ var (
 )
 
 type Server struct {
-	clients map[string]*Client
+	clients map[string]Client
 	rooms   map[RoomID]*Room
 
 	memberships map[RoomID]map[string]struct{}
@@ -22,13 +22,13 @@ type Server struct {
 
 func NewServer() *Server {
 	return &Server{
-		clients:     make(map[string]*Client),
+		clients:     make(map[string]Client),
 		rooms:       make(map[RoomID]*Room),
 		memberships: make(map[RoomID]map[string]struct{}),
 	}
 }
 
-func (s *Server) Register(client *Client) error {
+func (s *Server) Register(client Client) error {
 	_, ok := s.clients[client.Username()]
 	if ok {
 		return ErrDuplicateUsername

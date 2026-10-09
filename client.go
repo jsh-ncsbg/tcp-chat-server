@@ -1,15 +1,19 @@
 package main
 
-type Client struct {
+type Client interface {
+	Username() string
+}
+
+type client struct {
 	username string
 }
 
-func NewClient(username string) *Client {
-	return &Client{
+func NewClient(username string) Client {
+	return &client{
 		username: username,
 	}
 }
 
-func (c *Client) Username() string {
+func (c *client) Username() string {
 	return c.username
 }
