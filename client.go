@@ -1,18 +1,27 @@
 package main
 
+type ClientID = uint64
+
 type Client interface {
+	ID() ClientID
 	Username() string
 	Deliver(Message) error
 }
 
 type client struct {
+	id       ClientID
 	username string
 }
 
-func NewClient(username string) Client {
+func NewClient(id ClientID, username string) Client {
 	return &client{
+		id:       id,
 		username: username,
 	}
+}
+
+func (c *client) ID() ClientID {
+	return c.id
 }
 
 func (c *client) Username() string {

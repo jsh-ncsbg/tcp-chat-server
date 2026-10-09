@@ -20,31 +20,33 @@ type Message struct {
 }
 
 type Server struct {
-	clients map[string]Client
-	rooms   map[RoomID]*Room
+	clients   map[ClientID]Client
+	rooms     map[RoomID]*Room
+	usernames map[string]ClientID
 
-	memberships map[RoomID]map[string]struct{}
+	memberships map[RoomID]map[ClientID]struct{}
 }
 
 func NewServer() *Server {
 	return &Server{
-		clients:     make(map[string]Client),
+		clients:     make(map[ClientID]Client),
 		rooms:       make(map[RoomID]*Room),
-		memberships: make(map[RoomID]map[string]struct{}),
+		usernames:   make(map[string]ClientID),
+		memberships: make(map[RoomID]map[ClientID]struct{}),
 	}
 }
 
 func (s *Server) Register(client Client) error {
-	_, ok := s.clients[client.Username()]
-	if ok {
+	if s.usernameExists(client.Username()) {
 		return ErrDuplicateUsername
 	}
-	s.clients[client.Username()] = client
+	s.usernames[client.Username()] = client.ID()
+	s.clients[client.ID()] = client
 	return nil
 }
 
-func (s *Server) IsRegistered(username string) bool {
-	_, ok := s.clients[username]
+func (s *Server) IsRegistered(id ClientID) bool {
+	_, ok := s.clients[id]
 	return ok
 }
 
@@ -58,7 +60,7 @@ func (s *Server) AddRoom(room *Room) error {
 	s.rooms[room.ID()] = room
 
 	// Prepare membership map
-	s.memberships[room.ID()] = make(map[string]struct{})
+	s.memberships[room.ID()] = make(map[ClientID]struct{})
 
 	return nil
 }
@@ -68,8 +70,8 @@ func (s *Server) RoomExists(id RoomID) bool {
 	return ok
 }
 
-func (s *Server) Join(username string, roomID RoomID) error {
-	if !s.IsRegistered(username) {
+func (s *Server) Join(clientID ClientID, roomID RoomID) error {
+	if !s.IsRegistered(clientID) {
 		return fmt.Errorf("join: %w", ErrClientNotFound)
 	}
 
@@ -77,16 +79,16 @@ func (s *Server) Join(username string, roomID RoomID) error {
 		return fmt.Errorf("join: %w", ErrRoomNotFound)
 	}
 
-	if connectedRoom := s.RoomOf(username); connectedRoom != nil {
-		s.leave(username, connectedRoom.ID())
+	if connectedRoom := s.RoomOf(clientID); connectedRoom != nil {
+		s.leave(clientID, connectedRoom.ID())
 	}
 
-	s.memberships[roomID][username] = struct{}{}
+	s.memberships[roomID][clientID] = struct{}{}
 	return nil
 }
 
-func (s *Server) Leave(username string, roomID RoomID) error {
-	if !s.IsRegistered(username) {
+func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
+	if !s.IsRegistered(clientID) {
 		return fmt.Errorf("leave: %w", ErrClientNotFound)
 	}
 
@@ -94,41 +96,46 @@ func (s *Server) Leave(username string, roomID RoomID) error {
 		return fmt.Errorf("leave: %w", ErrRoomNotFound)
 	}
 
-	s.leave(username, roomID)
+	s.leave(clientID, roomID)
 	return nil
 }
 
-func (s *Server) leave(username string, roomID RoomID) {
+func (s *Server) leave(clientID ClientID, roomID RoomID) {
 	// assumes caller has guards
-	delete(s.memberships[roomID], username)
+	delete(s.memberships[roomID], clientID)
 }
 
-func (s *Server) isMember(username string, roomID RoomID) bool {
+func (s *Server) isMember(clientID ClientID, roomID RoomID) bool {
 	// assume caller has guards
-	_, ok := s.memberships[roomID][username]
+	_, ok := s.memberships[roomID][clientID]
 	return ok
 }
 
-func (s *Server) RoomOf(username string) *Room {
+func (s *Server) usernameExists(username string) bool {
+	_, ok := s.usernames[username]
+	return ok
+}
+
+func (s *Server) RoomOf(clientID ClientID) *Room {
 	for _, room := range s.rooms {
-		if s.isMember(username, room.ID()) {
+		if s.isMember(clientID, room.ID()) {
 			return room
 		}
 	}
 	return nil
 }
 
-func (s *Server) Disconnect(username string) error {
-	if !s.IsRegistered(username) {
+func (s *Server) Disconnect(clientID ClientID) error {
+	if !s.IsRegistered(clientID) {
 		return fmt.Errorf("disconnect: %w", ErrClientNotFound)
 	}
 
-	connectedRoom := s.RoomOf(username)
+	connectedRoom := s.RoomOf(clientID)
 	if connectedRoom != nil {
-		s.leave(username, connectedRoom.ID())
+		s.leave(clientID, connectedRoom.ID())
 	}
 
-	delete(s.clients, username)
+	delete(s.clients, clientID)
 
 	return nil
 }
@@ -146,13 +153,14 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 	return result
 }
 
-func (s *Server) HandleMessage(username string, content string) {
-	room := s.RoomOf(username)
+func (s *Server) HandleMessage(clientID ClientID, content string) {
+	sender := s.clients[clientID]
+	room := s.RoomOf(clientID)
 	clients := s.membersOf(room.ID())
 
 	for _, c := range clients {
 		err := c.Deliver(Message{
-			From:    username,
+			From:    sender.Username(),
 			Content: content,
 		})
 		if err != nil {
