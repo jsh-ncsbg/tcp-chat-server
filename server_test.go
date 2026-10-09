@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,13 +183,69 @@ func TestDisconnect(t *testing.T) {
 	})
 }
 
-func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...*Client) {
+func TestBroadcast(t *testing.T) {
+	t.Run("broadcasts to all client in that room", func(t *testing.T) {
+		server := NewServer()
+		room := NewRoom("general")
+		client := newFakeClient("Josh")
+		sameRoomClient := newFakeClient("Friend")
+		outsider := newFakeClient("outsider")
+
+		addRoom(t, server, room)
+		registerClients(t, server, outsider)
+		registerAndJoin(t, server, room, client, sameRoomClient)
+
+		content := "sample message content"
+		server.HandleMessage(client.Username(), content)
+
+		expected := client.Username() + ": " + content
+
+		assert.Equal(t, expected, client.inbox[0])
+		assert.Equal(t, expected, sameRoomClient.inbox[0])
+		assert.Empty(t, outsider.inbox)
+	})
+}
+
+func registerClients(t testing.TB, s *Server, clients ...Client) {
 	t.Helper()
 	for _, c := range clients {
 		err := s.Register(c)
 		require.NoError(t, err)
+	}
+}
 
-		err = s.Join(c.Username(), room.ID())
+func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...Client) {
+	t.Helper()
+	registerClients(t, s, clients...)
+	for _, c := range clients {
+		err := s.Join(c.Username(), room.ID())
 		require.NoError(t, err)
 	}
+}
+
+func addRoom(t testing.TB, s *Server, room *Room) {
+	t.Helper()
+	err := s.AddRoom(room)
+	require.NoError(t, err)
+}
+
+func newFakeClient(u string) *fakeClient {
+	return &fakeClient{
+		u:     u,
+		inbox: []string{},
+	}
+}
+
+type fakeClient struct {
+	u     string
+	inbox []string
+}
+
+func (fc *fakeClient) Username() string {
+	return fc.u
+}
+
+func (fc *fakeClient) Deliver(msg Message) error {
+	fc.inbox = append(fc.inbox, fmt.Sprintf("%s: %s", msg.From, msg.Content))
+	return nil
 }

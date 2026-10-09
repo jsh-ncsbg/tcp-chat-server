@@ -2,6 +2,7 @@ package main
 
 type Client interface {
 	Username() string
+	Deliver(Message) error
 }
 
 type client struct {
@@ -16,4 +17,9 @@ func NewClient(username string) Client {
 
 func (c *client) Username() string {
 	return c.username
+}
+
+func (c *client) Deliver(msg Message) error {
+	// TODO
+	return nil
 }

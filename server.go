@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 )
 
 var (
@@ -12,6 +13,11 @@ var (
 	ErrClientNotFound = errors.New("client not found")
 	ErrRoomNotFound   = errors.New("room not found")
 )
+
+type Message struct {
+	From    string
+	Content string
+}
 
 type Server struct {
 	clients map[string]Client
@@ -125,4 +131,32 @@ func (s *Server) Disconnect(username string) error {
 	delete(s.clients, username)
 
 	return nil
+}
+
+func (s *Server) membersOf(roomID RoomID) []Client {
+	clientIDs, ok := s.memberships[roomID]
+	if !ok {
+		return nil
+	}
+	result := []Client{}
+	for id := range clientIDs {
+		c, _ := s.clients[id]
+		result = append(result, c)
+	}
+	return result
+}
+
+func (s *Server) HandleMessage(username string, content string) {
+	room := s.RoomOf(username)
+	clients := s.membersOf(room.ID())
+
+	for _, c := range clients {
+		err := c.Deliver(Message{
+			From:    username,
+			Content: content,
+		})
+		if err != nil {
+			log.Printf("client deliver: %v\n", err)
+		}
+	}
 }
