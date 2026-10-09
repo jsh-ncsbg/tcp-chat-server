@@ -12,6 +12,8 @@ var (
 
 	ErrClientNotFound = errors.New("client not found")
 	ErrRoomNotFound   = errors.New("room not found")
+
+	ErrUnregisteredClient = errors.New("client not registered")
 )
 
 type Message struct {
@@ -40,14 +42,16 @@ func (s *Server) Register(client Client) error {
 	if s.usernameExists(client.Username()) {
 		return ErrDuplicateUsername
 	}
-	s.usernames[client.Username()] = client.ID()
+	if client.Username() != "" {
+		s.usernames[client.Username()] = client.ID()
+	}
 	s.clients[client.ID()] = client
 	return nil
 }
 
 func (s *Server) IsRegistered(id ClientID) bool {
-	_, ok := s.clients[id]
-	return ok
+	c, ok := s.clients[id]
+	return ok && c.Username() != ""
 }
 
 func (s *Server) AddRoom(room *Room) error {
@@ -155,6 +159,17 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 
 func (s *Server) HandleMessage(clientID ClientID, content string) {
 	sender := s.clients[clientID]
+	if !s.IsRegistered(sender.ID()) {
+		err := sender.Deliver(Message{
+			From:    "server",
+			Content: ErrUnregisteredClient.Error(),
+		})
+		if err != nil {
+			log.Printf("client deliver: %v\n", err)
+		}
+		return
+	}
+
 	room := s.RoomOf(clientID)
 	clients := s.membersOf(room.ID())
 
