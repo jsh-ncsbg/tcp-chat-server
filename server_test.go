@@ -173,6 +173,13 @@ func TestBroadcast(t *testing.T) {
 		assert.Equal(t, expected, sameRoomClient.inbox[0])
 		assert.Empty(t, outsider.inbox)
 	})
+
+	t.Run("unknown clients are checked", func(t *testing.T) {
+		server := NewServer()
+		err := server.HandleMessage(ClientID(123), "sample message")
+		assert.ErrorIs(t, err, ErrUnknownClient)
+	})
+
 	t.Run("unregistered clients gets declined", func(t *testing.T) {
 		server := NewServer()
 		client := newFakeClient(1, "")

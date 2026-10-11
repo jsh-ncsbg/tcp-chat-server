@@ -15,6 +15,9 @@ var (
 
 	ErrUnregisteredClient = errors.New("client not registered")
 	ErrNotInRoom          = errors.New("client not in a room")
+
+	// internal server errors
+	ErrUnknownClient = errors.New("unknown client")
 )
 
 type Message struct {
@@ -159,7 +162,11 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 }
 
 func (s *Server) HandleMessage(clientID ClientID, content string) error {
-	sender := s.clients[clientID]
+	sender, ok := s.clients[clientID]
+	if !ok {
+		return ErrUnknownClient
+	}
+
 	if !s.IsRegistered(sender.ID()) {
 		return ErrUnregisteredClient
 	}
