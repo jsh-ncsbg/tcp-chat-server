@@ -209,36 +209,44 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 }
 
 func (s *Server) HandleMessage(clientID ClientID, content string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sender, ok := s.clients[clientID]
-	if !ok {
-		return ErrUnknownClient
+	recipients, response, err := s.prepareMessage(clientID, content)
+	if err != nil {
+		return fmt.Errorf("client deliver: %w", err)
 	}
 
-	if !s.isRegisteredLocked(sender.ID()) {
-		return ErrUnregisteredClient
-	}
-
-	room := s.roomOfLocked(clientID)
-	if room == nil {
-		return ErrNotInRoom
-	}
-
-	clients := s.membersOf(room.ID())
-
-	for _, c := range clients {
-		if err := c.Deliver(
-			NewMsgResponse(
-				string(room.ID()),
-				sender.Username(),
-				content,
-			),
-		); err != nil {
+	for _, c := range recipients {
+		if err := c.Deliver(*response); err != nil {
 			log.Printf("client deliver: %v\n", err)
 		}
 	}
 
 	return nil
+}
+
+func (s *Server) prepareMessage(clientID ClientID, content string) ([]Client, *Response, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sender, ok := s.clients[clientID]
+	if !ok {
+		return nil, nil, ErrUnknownClient
+	}
+
+	if !s.isRegisteredLocked(sender.ID()) {
+		return nil, nil, ErrUnregisteredClient
+	}
+
+	room := s.roomOfLocked(clientID)
+	if room == nil {
+		return nil, nil, ErrNotInRoom
+	}
+
+	clients := s.membersOf(room.ID())
+	msg := NewMsgResponse(
+		string(room.ID()),
+		sender.Username(),
+		content,
+	)
+
+	return clients, &msg, nil
 }
