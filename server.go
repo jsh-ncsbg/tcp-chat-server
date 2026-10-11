@@ -160,10 +160,7 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 func (s *Server) HandleMessage(clientID ClientID, content string) {
 	sender := s.clients[clientID]
 	if !s.IsRegistered(sender.ID()) {
-		err := sender.Deliver(Message{
-			From:    "server",
-			Content: ErrUnregisteredClient.Error(),
-		})
+		err := sender.Deliver(NewErrResponse("UNAUTHENTICATED", "client is not registered"))
 		if err != nil {
 			log.Printf("client deliver: %v\n", err)
 		}
@@ -172,10 +169,10 @@ func (s *Server) HandleMessage(clientID ClientID, content string) {
 
 	room := s.RoomOf(clientID)
 	if room == nil {
-		err := sender.Deliver(Message{
-			From:    "server",
-			Content: ErrRoomNotFound.Error(),
-		})
+		err := sender.Deliver(NewErrResponse(
+			"ROOM_NOT_FOUND",
+			"client not in a room",
+		))
 		if err != nil {
 			log.Printf("client deliver: %v\n", err)
 		}
@@ -185,10 +182,13 @@ func (s *Server) HandleMessage(clientID ClientID, content string) {
 	clients := s.membersOf(room.ID())
 
 	for _, c := range clients {
-		err := c.Deliver(Message{
-			From:    sender.Username(),
-			Content: content,
-		})
+		err := c.Deliver(
+			NewMsgResponse(
+				string(room.ID()),
+				sender.Username(),
+				content,
+			),
+		)
 		if err != nil {
 			log.Printf("client deliver: %v\n", err)
 		}

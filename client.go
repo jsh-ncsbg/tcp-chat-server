@@ -5,7 +5,7 @@ type ClientID = uint64
 type Client interface {
 	ID() ClientID
 	Username() string
-	Deliver(Message) error
+	Deliver(Response) error
 }
 
 type client struct {
@@ -28,7 +28,7 @@ func (c *client) Username() string {
 	return c.username
 }
 
-func (c *client) Deliver(msg Message) error {
+func (c *client) Deliver(msg Response) error {
 	// TODO
 	return nil
 }

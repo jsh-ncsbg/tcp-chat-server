@@ -166,7 +166,7 @@ func TestBroadcast(t *testing.T) {
 		content := "sample message content"
 		server.HandleMessage(client.ID(), content)
 
-		expected := client.Username() + ": " + content
+		expected := fmt.Sprintf("MSG %s %s %s", room.ID(), client.Username(), content)
 
 		assert.Equal(t, expected, client.inbox[0])
 		assert.Equal(t, expected, sameRoomClient.inbox[0])
@@ -179,7 +179,8 @@ func TestBroadcast(t *testing.T) {
 		registerClients(t, server, client)
 		server.HandleMessage(client.ID(), "nonsense message")
 
-		expected := "server: " + ErrUnregisteredClient.Error()
+		expected := "ERR UNAUTHENTICATED client is not registered"
+
 		got := client.inbox[0]
 		assert.Equal(t, expected, got)
 	})
@@ -191,7 +192,7 @@ func TestBroadcast(t *testing.T) {
 		registerClients(t, server, client)
 		server.HandleMessage(client.ID(), "sample message")
 
-		expected := "server: " + ErrRoomNotFound.Error()
+		expected := "ERR ROOM_NOT_FOUND client not in a room"
 		got := client.inbox[0]
 		assert.Equal(t, expected, got)
 	})
@@ -255,7 +256,7 @@ func (fc *fakeClient) ID() ClientID {
 	return fc.id
 }
 
-func (fc *fakeClient) Deliver(msg Message) error {
-	fc.inbox = append(fc.inbox, fmt.Sprintf("%s: %s", msg.From, msg.Content))
+func (fc *fakeClient) Deliver(msg Response) error {
+	fc.inbox = append(fc.inbox, msg.String())
 	return nil
 }
