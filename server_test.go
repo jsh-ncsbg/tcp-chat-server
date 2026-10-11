@@ -164,7 +164,8 @@ func TestBroadcast(t *testing.T) {
 		registerAndJoin(t, server, room, client, sameRoomClient)
 
 		content := "sample message content"
-		server.HandleMessage(client.ID(), content)
+		err := server.HandleMessage(client.ID(), content)
+		require.NoError(t, err)
 
 		expected := fmt.Sprintf("MSG %s %s %s", room.ID(), client.Username(), content)
 
@@ -177,12 +178,8 @@ func TestBroadcast(t *testing.T) {
 		client := newFakeClient(1, "")
 
 		registerClients(t, server, client)
-		server.HandleMessage(client.ID(), "nonsense message")
-
-		expected := "ERR UNAUTHENTICATED client is not registered"
-
-		got := client.inbox[0]
-		assert.Equal(t, expected, got)
+		err := server.HandleMessage(client.ID(), "nonsense message")
+		assert.ErrorIs(t, err, ErrUnregisteredClient)
 	})
 
 	t.Run("clients with no room are declined", func(t *testing.T) {
@@ -190,11 +187,8 @@ func TestBroadcast(t *testing.T) {
 		client := newFakeClient(1, "Josh")
 
 		registerClients(t, server, client)
-		server.HandleMessage(client.ID(), "sample message")
-
-		expected := "ERR ROOM_NOT_FOUND client not in a room"
-		got := client.inbox[0]
-		assert.Equal(t, expected, got)
+		err := server.HandleMessage(client.ID(), "sample message")
+		assert.ErrorIs(t, err, ErrNotInRoom)
 	})
 }
 

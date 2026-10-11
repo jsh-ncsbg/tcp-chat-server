@@ -14,6 +14,7 @@ var (
 	ErrRoomNotFound   = errors.New("room not found")
 
 	ErrUnregisteredClient = errors.New("client not registered")
+	ErrNotInRoom          = errors.New("client not in a room")
 )
 
 type Message struct {
@@ -157,40 +158,30 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 	return result
 }
 
-func (s *Server) HandleMessage(clientID ClientID, content string) {
+func (s *Server) HandleMessage(clientID ClientID, content string) error {
 	sender := s.clients[clientID]
 	if !s.IsRegistered(sender.ID()) {
-		err := sender.Deliver(NewErrResponse("UNAUTHENTICATED", "client is not registered"))
-		if err != nil {
-			log.Printf("client deliver: %v\n", err)
-		}
-		return
+		return ErrUnregisteredClient
 	}
 
 	room := s.RoomOf(clientID)
 	if room == nil {
-		err := sender.Deliver(NewErrResponse(
-			"ROOM_NOT_FOUND",
-			"client not in a room",
-		))
-		if err != nil {
-			log.Printf("client deliver: %v\n", err)
-		}
-		return
+		return ErrNotInRoom
 	}
 
 	clients := s.membersOf(room.ID())
 
 	for _, c := range clients {
-		err := c.Deliver(
+		if err := c.Deliver(
 			NewMsgResponse(
 				string(room.ID()),
 				sender.Username(),
 				content,
 			),
-		)
-		if err != nil {
+		); err != nil {
 			log.Printf("client deliver: %v\n", err)
 		}
 	}
+
+	return nil
 }
