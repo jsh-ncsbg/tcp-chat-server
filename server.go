@@ -138,12 +138,14 @@ func (s *Server) Disconnect(clientID ClientID) error {
 		return fmt.Errorf("disconnect: %w", ErrClientNotFound)
 	}
 
+	client, _ := s.clients[clientID]
 	connectedRoom := s.RoomOf(clientID)
 	if connectedRoom != nil {
 		s.leave(clientID, connectedRoom.ID())
 	}
 
 	delete(s.clients, clientID)
+	delete(s.usernames, client.Username())
 
 	return nil
 }

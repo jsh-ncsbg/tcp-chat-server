@@ -135,6 +135,9 @@ func TestDisconnect(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.False(t, server.IsRegistered(client.ID()))
+
+		_, exists := server.usernames[client.Username()]
+		assert.False(t, exists, "username must be removed from registry")
 	})
 
 	t.Run("remove membership", func(t *testing.T) {
