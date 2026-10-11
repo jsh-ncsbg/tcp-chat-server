@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 )
 
 var (
@@ -27,6 +28,8 @@ type Message struct {
 }
 
 type Server struct {
+	mu sync.RWMutex
+
 	clients   map[ClientID]Client
 	rooms     map[RoomID]*Room
 	usernames map[string]ClientID
@@ -44,6 +47,9 @@ func NewServer() *Server {
 }
 
 func (s *Server) Register(client Client) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, ok := s.clients[client.ID()]
 	if ok {
 		return fmt.Errorf("register: %w", ErrDuplicateClientID)
@@ -60,11 +66,21 @@ func (s *Server) Register(client Client) error {
 }
 
 func (s *Server) IsRegistered(id ClientID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.isRegisteredLocked(id)
+}
+
+func (s *Server) isRegisteredLocked(id ClientID) bool {
 	c, ok := s.clients[id]
 	return ok && c.Username() != ""
 }
 
 func (s *Server) AddRoom(room *Room) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, ok := s.rooms[room.ID()]
 	if ok {
 		return ErrDuplicateRoom
@@ -80,20 +96,30 @@ func (s *Server) AddRoom(room *Room) error {
 }
 
 func (s *Server) RoomExists(id RoomID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.roomExistsLocked(id)
+}
+
+func (s *Server) roomExistsLocked(id RoomID) bool {
 	_, ok := s.rooms[id]
 	return ok
 }
 
 func (s *Server) Join(clientID ClientID, roomID RoomID) error {
-	if !s.IsRegistered(clientID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.isRegisteredLocked(clientID) {
 		return fmt.Errorf("join: %w", ErrClientNotFound)
 	}
 
-	if !s.RoomExists(roomID) {
+	if !s.roomExistsLocked(roomID) {
 		return fmt.Errorf("join: %w", ErrRoomNotFound)
 	}
 
-	if connectedRoom := s.RoomOf(clientID); connectedRoom != nil {
+	if connectedRoom := s.roomOfLocked(clientID); connectedRoom != nil {
 		s.leave(clientID, connectedRoom.ID())
 	}
 
@@ -102,11 +128,14 @@ func (s *Server) Join(clientID ClientID, roomID RoomID) error {
 }
 
 func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
-	if !s.IsRegistered(clientID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.isRegisteredLocked(clientID) {
 		return fmt.Errorf("leave: %w", ErrClientNotFound)
 	}
 
-	if !s.RoomExists(roomID) {
+	if !s.roomExistsLocked(roomID) {
 		return fmt.Errorf("leave: %w", ErrRoomNotFound)
 	}
 
@@ -131,6 +160,13 @@ func (s *Server) usernameExists(username string) bool {
 }
 
 func (s *Server) RoomOf(clientID ClientID) *Room {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.roomOfLocked(clientID)
+}
+
+func (s *Server) roomOfLocked(clientID ClientID) *Room {
 	for _, room := range s.rooms {
 		if s.isMember(clientID, room.ID()) {
 			return room
@@ -140,12 +176,15 @@ func (s *Server) RoomOf(clientID ClientID) *Room {
 }
 
 func (s *Server) Disconnect(clientID ClientID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	client, exists := s.clients[clientID]
 	if !exists {
 		return ErrClientNotFound
 	}
 
-	connectedRoom := s.RoomOf(clientID)
+	connectedRoom := s.roomOfLocked(clientID)
 	if connectedRoom != nil {
 		s.leave(clientID, connectedRoom.ID())
 	}
@@ -170,16 +209,19 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 }
 
 func (s *Server) HandleMessage(clientID ClientID, content string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	sender, ok := s.clients[clientID]
 	if !ok {
 		return ErrUnknownClient
 	}
 
-	if !s.IsRegistered(sender.ID()) {
+	if !s.isRegisteredLocked(sender.ID()) {
 		return ErrUnregisteredClient
 	}
 
-	room := s.RoomOf(clientID)
+	room := s.roomOfLocked(clientID)
 	if room == nil {
 		return ErrNotInRoom
 	}
