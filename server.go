@@ -159,6 +159,11 @@ func (s *Server) usernameExists(username string) bool {
 	return ok
 }
 
+func (s *Server) clientExists(clientID ClientID) bool {
+	_, ok := s.clients[clientID]
+	return ok
+}
+
 func (s *Server) RoomOf(clientID ClientID) *Room {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -146,9 +146,10 @@ func TestDisconnect(t *testing.T) {
 		err := server.Disconnect(client.ID())
 		require.NoError(t, err)
 
-		assert.False(t, server.IsRegistered(client.ID()))
+		exists := server.clientExists(client.ID())
+		assert.False(t, exists)
 
-		_, exists := server.usernames[client.Username()]
+		exists = server.usernameExists(client.Username())
 		assert.False(t, exists, "username must be removed from registry")
 	})
 
