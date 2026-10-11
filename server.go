@@ -140,11 +140,11 @@ func (s *Server) RoomOf(clientID ClientID) *Room {
 }
 
 func (s *Server) Disconnect(clientID ClientID) error {
-	if !s.IsRegistered(clientID) {
-		return fmt.Errorf("disconnect: %w", ErrClientNotFound)
+	client, exists := s.clients[clientID]
+	if !exists {
+		return ErrClientNotFound
 	}
 
-	client, _ := s.clients[clientID]
 	connectedRoom := s.RoomOf(clientID)
 	if connectedRoom != nil {
 		s.leave(clientID, connectedRoom.ID())
