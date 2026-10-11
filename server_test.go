@@ -19,6 +19,18 @@ func TestServer(t *testing.T) {
 		assert.False(t, server.IsRegistered(1))
 	})
 
+	t.Run("duplicate client id is handled", func(t *testing.T) {
+		// server error
+		server := NewServer()
+		client := NewClient(2, "Josh")
+		dup := NewClient(2, "James")
+
+		registerClients(t, server, client)
+
+		err := server.Register(dup)
+		assert.ErrorIs(t, err, ErrDuplicateClientID)
+	})
+
 	t.Run("duplicate username is rejected", func(t *testing.T) {
 		server := NewServer()
 		client := NewClient(1, "Josh")

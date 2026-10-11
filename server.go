@@ -17,7 +17,8 @@ var (
 	ErrNotInRoom          = errors.New("client not in a room")
 
 	// internal server errors
-	ErrUnknownClient = errors.New("unknown client")
+	ErrUnknownClient     = errors.New("unknown client")
+	ErrDuplicateClientID = errors.New("duplicate client id")
 )
 
 type Message struct {
@@ -43,6 +44,11 @@ func NewServer() *Server {
 }
 
 func (s *Server) Register(client Client) error {
+	_, ok := s.clients[client.ID()]
+	if ok {
+		return fmt.Errorf("register: %w", ErrDuplicateClientID)
+	}
+
 	if s.usernameExists(client.Username()) {
 		return ErrDuplicateUsername
 	}
