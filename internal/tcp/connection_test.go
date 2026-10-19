@@ -1,4 +1,4 @@
-package main
+package tcp
 
 import (
 	"bufio"
@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jsh-ncsbg/tcp-chat-server/internal/chat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,18 +60,18 @@ func TestCommandErrorResponse(t *testing.T) {
 	}{
 		{errInvalidCommand, "INVALID_COMMAND"},
 		{errInvalidArguments, "INVALID_ARGUMENTS"},
-		{ErrInvalidUsername, "INVALID_ARGUMENTS"},
-		{ErrDuplicateUsername, "USERNAME_TAKEN"},
-		{ErrAlreadyRegistered, "ALREADY_REGISTERED"},
-		{ErrUnregisteredClient, "UNREGISTERED"},
-		{ErrRoomNotFound, "ROOM_NOT_FOUND"},
-		{ErrNotInRoom, "NOT_IN_ROOM"},
-		{ErrUnknownClient, "INTERNAL"},
+		{chat.ErrInvalidUsername, "INVALID_ARGUMENTS"},
+		{chat.ErrDuplicateUsername, "USERNAME_TAKEN"},
+		{chat.ErrAlreadyRegistered, "ALREADY_REGISTERED"},
+		{chat.ErrUnregisteredClient, "UNREGISTERED"},
+		{chat.ErrRoomNotFound, "ROOM_NOT_FOUND"},
+		{chat.ErrNotInRoom, "NOT_IN_ROOM"},
+		{chat.ErrUnknownClient, "INTERNAL"},
 		{errors.New("unexpected failure"), "INTERNAL"},
 	} {
 		t.Run(tt.err.Error(), func(t *testing.T) {
 			response := commandErrorResponse(fmt.Errorf("wrapped: %w", tt.err))
-			assert.Equal(t, ErrorResponse, response.Type)
+			assert.Equal(t, chat.ErrorResponse, response.Type)
 			assert.True(t, strings.HasPrefix(response.String(), "ERR "+tt.code+" "), response.String())
 			if tt.code == "INTERNAL" {
 				assert.Equal(t, "ERR INTERNAL internal server error", response.String())
@@ -80,8 +81,7 @@ func TestCommandErrorResponse(t *testing.T) {
 }
 
 func TestConnectionCommandRecovery(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	peer := newConnectionPeer(t, server, 1)
 	for _, tt := range []struct {
 		command string
@@ -125,7 +125,8 @@ func TestConnectionCommandRecovery(t *testing.T) {
 	peer.exchange(t, "MSG hello  world  \n", "MSG general Josh hello  world  \n")
 	peer.send(t, "LEAVE general\n")
 	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR INVALID_ARGUMENTS "))
-	assert.Same(t, server.rooms["general"], server.RoomOf(1))
+	require.NotNil(t, server.RoomOf(1))
+	assert.Equal(t, chat.RoomID("general"), server.RoomOf(1).ID())
 	peer.exchange(t, "LEAVE\r\n", "INFO OK LEAVE\n")
 	assert.Nil(t, server.RoomOf(1))
 	peer.exchange(t, "LEAVE \t\n", "INFO OK LEAVE\n")
@@ -137,8 +138,7 @@ func TestConnectionCommandRecovery(t *testing.T) {
 }
 
 func TestConnectionRoomRouting(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	alice := newConnectionPeer(t, server, 1)
 	bob := newConnectionPeer(t, server, 2)
 	alice.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
@@ -168,37 +168,36 @@ func TestConnectionRoomRouting(t *testing.T) {
 }
 
 func TestConnectionDuplicateID(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
-	original := newFakeClient(1)
-	registerAndJoin(t, server, server.rooms["general"], original, "Josh")
+	server := newTestServer(t)
+	original := newConnectionPeer(t, server, 1)
+	original.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+	original.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
 	peer := newConnectionPeer(t, server, 1)
 
-	assert.ErrorIs(t, awaitClientResult(t, peer.result), ErrDuplicateClientID)
-	_, err = peer.conn.Read(make([]byte, 1))
+	assert.ErrorIs(t, awaitClientResult(t, peer.result), chat.ErrDuplicateClientID)
+	_, err := peer.conn.Read(make([]byte, 1))
 	assert.ErrorIs(t, err, io.EOF)
 	assert.True(t, server.IsRegistered(1))
-	assert.Same(t, server.rooms["general"], server.RoomOf(1))
-	assert.Same(t, original, server.clients[1].connection)
+	require.NotNil(t, server.RoomOf(1))
+	assert.Equal(t, chat.RoomID("general"), server.RoomOf(1).ID())
+	original.exchange(t, "MSG still connected\n", "MSG general Josh still connected\n")
 }
 
 func TestConnectionOversizedInput(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	peer := newConnectionPeer(t, server, 1)
 	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
 	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
 	io.WriteString(peer.conn, strings.Repeat("x", bufio.MaxScanTokenSize+1)+"\n")
 
-	err = awaitClientResult(t, peer.result)
+	err := awaitClientResult(t, peer.result)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "connection read")
 	assertConnectionRemoved(t, server, 1, "Josh")
 }
 
 func TestConnectionWriteFailure(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	conn, remote := net.Pipe()
 	writeFailure := errors.New("injected write failure")
 	var writes atomic.Int32
@@ -220,8 +219,7 @@ func TestConnectionWriteFailure(t *testing.T) {
 }
 
 func TestConnectionReadAndCleanupFailure(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	conn, remote := net.Pipe()
 	input := strings.NewReader("REGISTER Josh\nJOIN general\n")
 	readFailure := errors.New("injected read failure")
@@ -241,15 +239,14 @@ func TestConnectionReadAndCleanupFailure(t *testing.T) {
 		},
 	}, remote)
 
-	err = awaitClientResult(t, peer.result)
+	err := awaitClientResult(t, peer.result)
 	assert.ErrorIs(t, err, readFailure)
 	assert.ErrorIs(t, err, closeFailure)
 	assertConnectionRemoved(t, server, 1, "Josh")
 }
 
 func TestConnectionResponseQueueFull(t *testing.T) {
-	server, err := newDefaultServer()
-	require.NoError(t, err)
+	server := newTestServer(t)
 	peer := newConnectionPeer(t, server, 1)
 	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
 	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
@@ -265,13 +262,13 @@ type connectionPeer struct {
 	result <-chan error
 }
 
-func newConnectionPeer(t *testing.T, server *Server, id ClientID) *connectionPeer {
+func newConnectionPeer(t *testing.T, server *chat.Server, id chat.ClientID) *connectionPeer {
 	t.Helper()
 	conn, peer := net.Pipe()
 	return startConnectionPeer(t, server, id, conn, peer)
 }
 
-func startConnectionPeer(t *testing.T, server *Server, id ClientID, conn, peer net.Conn) *connectionPeer {
+func startConnectionPeer(t *testing.T, server *chat.Server, id chat.ClientID, conn, peer net.Conn) *connectionPeer {
 	t.Helper()
 	require.NoError(t, peer.SetDeadline(time.Now().Add(clientTestTimeout)))
 	result := make(chan error, 1)
@@ -310,13 +307,34 @@ func (p *connectionPeer) exchange(t *testing.T, command, response string) {
 	assert.Equal(t, response, p.receive(t))
 }
 
-func assertConnectionRemoved(t *testing.T, server *Server, id ClientID, username string) {
+func assertConnectionRemoved(t *testing.T, server *chat.Server, id chat.ClientID, username string) {
 	t.Helper()
-	server.mu.RLock()
-	defer server.mu.RUnlock()
-	assert.NotContains(t, server.clients, id)
-	assert.NotContains(t, server.usernames, username)
-	for _, members := range server.memberships {
-		assert.NotContains(t, members, id)
+	assert.False(t, server.IsRegistered(id))
+	assert.Nil(t, server.RoomOf(id))
+	require.NoError(t, server.Connect(&cleanupProbe{id: id}))
+	defer server.Disconnect(id)
+	require.NoError(t, server.Register(id, username))
+	assert.Nil(t, server.RoomOf(id))
+	assert.ErrorIs(t, server.HandleMessage(id, "roomless"), chat.ErrNotInRoom)
+}
+
+func newTestServer(t *testing.T) *chat.Server {
+	t.Helper()
+	server := chat.NewServer()
+	for _, id := range []chat.RoomID{"general", "breakout-1"} {
+		require.NoError(t, server.AddRoom(chat.NewRoom(id)))
 	}
+	return server
+}
+
+type cleanupProbe struct {
+	id chat.ClientID
+}
+
+func (p *cleanupProbe) ID() chat.ClientID {
+	return p.id
+}
+
+func (p *cleanupProbe) Deliver(chat.Response) error {
+	return nil
 }

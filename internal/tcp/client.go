@@ -1,4 +1,4 @@
-package main
+package tcp
 
 import (
 	"errors"
@@ -6,9 +6,9 @@ import (
 	"io"
 	"net"
 	"sync"
-)
 
-type ClientID = uint64
+	"github.com/jsh-ncsbg/tcp-chat-server/internal/chat"
+)
 
 var (
 	MsgBufferSize   = 64
@@ -16,20 +16,11 @@ var (
 	ErrClientClosed = errors.New("client is closed")
 )
 
-type Client interface {
-	ID() ClientID
-
-	// Deliver queues a response without blocking and supports concurrent calls.
-	// A nil error means the response was queued, not received by the recipient.
-	// It returns an error if the queue is full or the client is closed.
-	Deliver(Response) error
-}
-
 type client struct {
-	id   ClientID
+	id   chat.ClientID
 	conn net.Conn
 
-	msgQueue chan Response
+	msgQueue chan chat.Response
 	done     chan struct{}
 
 	mu        sync.Mutex
@@ -38,20 +29,20 @@ type client struct {
 	closeErr  error
 }
 
-func NewClient(id ClientID, conn net.Conn) *client {
+func NewClient(id chat.ClientID, conn net.Conn) *client {
 	return &client{
 		id:       id,
 		conn:     conn,
-		msgQueue: make(chan Response, MsgBufferSize),
+		msgQueue: make(chan chat.Response, MsgBufferSize),
 		done:     make(chan struct{}),
 	}
 }
 
-func (c *client) ID() ClientID {
+func (c *client) ID() chat.ClientID {
 	return c.id
 }
 
-func (c *client) Deliver(msg Response) error {
+func (c *client) Deliver(msg chat.Response) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

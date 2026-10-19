@@ -1,4 +1,4 @@
-package main
+package chat
 
 type RoomID string
 

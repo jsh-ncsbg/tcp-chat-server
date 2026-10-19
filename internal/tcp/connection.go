@@ -1,4 +1,4 @@
-package main
+package tcp
 
 import (
 	"bufio"
@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"strings"
+
+	"github.com/jsh-ncsbg/tcp-chat-server/internal/chat"
 )
 
 var (
@@ -14,7 +16,7 @@ var (
 	errInvalidArguments = errors.New("invalid arguments")
 )
 
-func HandleConnection(server *Server, id ClientID, conn net.Conn) (result error) {
+func HandleConnection(server *chat.Server, id chat.ClientID, conn net.Conn) (result error) {
 	client := NewClient(id, conn)
 	if err := server.Connect(client); err != nil {
 		return errors.Join(err, client.Close())
@@ -80,14 +82,14 @@ func parseCommand(line string) (string, string, error) {
 	}
 }
 
-func dispatchCommand(server *Server, id ClientID, line string) *Response {
+func dispatchCommand(server *chat.Server, id chat.ClientID, line string) *chat.Response {
 	name, argument, err := parseCommand(line)
 	if err == nil {
 		switch name {
 		case "REGISTER":
 			err = server.Register(id, argument)
 		case "JOIN":
-			err = server.Join(id, RoomID(argument))
+			err = server.Join(id, chat.RoomID(argument))
 		case "LEAVE":
 			err = server.Leave(id)
 		case "MSG":
@@ -101,29 +103,29 @@ func dispatchCommand(server *Server, id ClientID, line string) *Response {
 	if name == "MSG" {
 		return nil
 	}
-	response := NewInfoResponse("OK " + name)
+	response := chat.NewInfoResponse("OK " + name)
 	return &response
 }
 
-func commandErrorResponse(err error) Response {
+func commandErrorResponse(err error) chat.Response {
 	var code string
 	switch {
 	case errors.Is(err, errInvalidCommand):
 		code = "INVALID_COMMAND"
-	case errors.Is(err, errInvalidArguments), errors.Is(err, ErrInvalidUsername):
+	case errors.Is(err, errInvalidArguments), errors.Is(err, chat.ErrInvalidUsername):
 		code = "INVALID_ARGUMENTS"
-	case errors.Is(err, ErrDuplicateUsername):
+	case errors.Is(err, chat.ErrDuplicateUsername):
 		code = "USERNAME_TAKEN"
-	case errors.Is(err, ErrAlreadyRegistered):
+	case errors.Is(err, chat.ErrAlreadyRegistered):
 		code = "ALREADY_REGISTERED"
-	case errors.Is(err, ErrUnregisteredClient):
+	case errors.Is(err, chat.ErrUnregisteredClient):
 		code = "UNREGISTERED"
-	case errors.Is(err, ErrRoomNotFound):
+	case errors.Is(err, chat.ErrRoomNotFound):
 		code = "ROOM_NOT_FOUND"
-	case errors.Is(err, ErrNotInRoom):
+	case errors.Is(err, chat.ErrNotInRoom):
 		code = "NOT_IN_ROOM"
 	default:
-		return NewErrResponse("INTERNAL", "internal server error")
+		return chat.NewErrResponse("INTERNAL", "internal server error")
 	}
-	return NewErrResponse(code, err.Error())
+	return chat.NewErrResponse(code, err.Error())
 }

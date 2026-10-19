@@ -1,4 +1,4 @@
-package main
+package tcp
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jsh-ncsbg/tcp-chat-server/internal/chat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,11 +18,11 @@ const clientTestTimeout = 5 * time.Second
 
 func TestClientWriteLoop(t *testing.T) {
 	client, peer := newPipeClient(t)
-	assert.Equal(t, ClientID(1), client.ID())
-	messages := []Response{
-		NewInfoResponse("connected"),
-		NewMsgResponse("general", "Josh", "hello world"),
-		NewErrResponse("INVALID", "invalid command"),
+	assert.Equal(t, chat.ClientID(1), client.ID())
+	messages := []chat.Response{
+		chat.NewInfoResponse("connected"),
+		chat.NewMsgResponse("general", "Josh", "hello world"),
+		chat.NewErrResponse("INVALID", "invalid command"),
 	}
 	for _, msg := range messages {
 		require.NoError(t, client.Deliver(msg))
@@ -40,7 +41,7 @@ func TestClientWriteLoop(t *testing.T) {
 
 func TestClientQueueFull(t *testing.T) {
 	client, peer := newPipeClient(t)
-	msg := NewInfoResponse("queued")
+	msg := chat.NewInfoResponse("queued")
 	for i := 0; i < MsgBufferSize; i++ {
 		require.NoError(t, client.Deliver(msg))
 	}
@@ -53,7 +54,7 @@ func TestClientQueueFull(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, msg.String()+"\n", line)
 	}
-	require.NoError(t, client.Deliver(NewInfoResponse("available again")))
+	require.NoError(t, client.Deliver(chat.NewInfoResponse("available again")))
 	line, err := reader.ReadString('\n')
 	require.NoError(t, err)
 	assert.Equal(t, "INFO available again\n", line)
@@ -74,11 +75,11 @@ func TestClientCloseBeforeWriter(t *testing.T) {
 	})
 	t.Cleanup(func() { client.Close() })
 	for i := 0; i < MsgBufferSize; i++ {
-		require.NoError(t, client.Deliver(NewInfoResponse("pending")))
+		require.NoError(t, client.Deliver(chat.NewInfoResponse("pending")))
 	}
 	require.NoError(t, client.Close())
 	require.NoError(t, client.Close())
-	assert.ErrorIs(t, client.Deliver(NewInfoResponse("late")), ErrClientClosed)
+	assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
 	require.NoError(t, awaitClientResult(t, startClientWriter(client)))
 	assert.Equal(t, int32(0), writes.Load(), "queued responses must be abandoned")
 }
@@ -88,7 +89,7 @@ func TestClientCloseIdleWriter(t *testing.T) {
 	result := startClientWriter(client)
 	require.NoError(t, client.Close())
 	require.NoError(t, awaitClientResult(t, result))
-	assert.ErrorIs(t, client.Deliver(NewInfoResponse("late")), ErrClientClosed)
+	assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
 }
 
 func TestClientCloseBlockedWriter(t *testing.T) {
@@ -106,8 +107,8 @@ func TestClientCloseBlockedWriter(t *testing.T) {
 		},
 	})
 	t.Cleanup(func() { client.Close() })
-	require.NoError(t, client.Deliver(NewInfoResponse("blocked")))
-	require.NoError(t, client.Deliver(NewInfoResponse("pending")))
+	require.NoError(t, client.Deliver(chat.NewInfoResponse("blocked")))
+	require.NoError(t, client.Deliver(chat.NewInfoResponse("pending")))
 	result := startClientWriter(client)
 	select {
 	case <-started:
@@ -118,7 +119,7 @@ func TestClientCloseBlockedWriter(t *testing.T) {
 	require.NoError(t, client.Close())
 	require.NoError(t, awaitClientResult(t, result))
 	assert.Equal(t, int32(1), writes.Load(), "shutdown must not write pending responses")
-	assert.ErrorIs(t, client.Deliver(NewInfoResponse("late")), ErrClientClosed)
+	assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
 }
 
 func TestClientWriteFailure(t *testing.T) {
@@ -144,12 +145,12 @@ func TestClientWriteFailure(t *testing.T) {
 			})
 			t.Cleanup(func() { client.Close() })
 			require.NoError(t, peer.SetReadDeadline(time.Now().Add(clientTestTimeout)))
-			require.NoError(t, client.Deliver(NewInfoResponse("hello")))
+			require.NoError(t, client.Deliver(chat.NewInfoResponse("hello")))
 
 			err := awaitClientResult(t, startClientWriter(client))
 			assert.ErrorIs(t, err, tt.err)
 			assert.ErrorContains(t, err, "client write")
-			assert.ErrorIs(t, client.Deliver(NewInfoResponse("late")), ErrClientClosed)
+			assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
 			_, err = peer.Read(make([]byte, 1))
 			assert.ErrorIs(t, err, io.EOF, "a write failure must close the socket")
 		})
@@ -196,7 +197,7 @@ func TestClientConcurrentDeliverAndClose(t *testing.T) {
 		go func() {
 			<-start
 			for j := 0; j < 128; j++ {
-				err := client.Deliver(NewInfoResponse("hello"))
+				err := client.Deliver(chat.NewInfoResponse("hello"))
 				if err != nil && !errors.Is(err, ErrQueueFull) && !errors.Is(err, ErrClientClosed) {
 					results <- err
 					return
@@ -213,7 +214,7 @@ func TestClientConcurrentDeliverAndClose(t *testing.T) {
 	for i := 0; i < senders+1; i++ {
 		require.NoError(t, awaitClientResult(t, results))
 	}
-	assert.ErrorIs(t, client.Deliver(NewInfoResponse("late")), ErrClientClosed)
+	assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
 }
 
 func newPipeClient(t *testing.T) (*client, net.Conn) {

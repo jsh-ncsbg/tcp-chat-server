@@ -1,4 +1,4 @@
-package main
+package chat
 
 import (
 	"fmt"
@@ -66,6 +66,12 @@ func TestServer(t *testing.T) {
 		err := server.AddRoom(dup)
 		assert.ErrorIs(t, err, ErrDuplicateRoom)
 	})
+}
+
+func TestNewServerStartsWithoutRooms(t *testing.T) {
+	server := NewServer()
+	assert.Empty(t, server.rooms)
+	assert.Empty(t, server.memberships)
 }
 
 func TestRoomOf(t *testing.T) {
