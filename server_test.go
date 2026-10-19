@@ -11,9 +11,9 @@ import (
 func TestServer(t *testing.T) {
 	t.Run("client can register", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(2, "Josh")
+		client := NewClient(2)
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 
 		assert.True(t, server.IsRegistered(client.ID()))
 		assert.False(t, server.IsRegistered(1))
@@ -22,24 +22,28 @@ func TestServer(t *testing.T) {
 	t.Run("duplicate client id is handled", func(t *testing.T) {
 		// server error
 		server := NewServer()
-		client := NewClient(2, "Josh")
-		dup := NewClient(2, "James")
+		client := NewClient(2)
+		dup := NewClient(2)
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 
-		err := server.Register(dup)
+		err := server.Connect(dup)
 		assert.ErrorIs(t, err, ErrDuplicateClientID)
+		assert.Same(t, client, server.clients[client.ID()].connection)
+		assert.True(t, server.IsRegistered(client.ID()))
 	})
 
 	t.Run("duplicate username is rejected", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1, "Josh")
-		dup := NewClient(2, "Josh")
+		client := NewClient(1)
+		dup := NewClient(2)
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 
-		err := server.Register(dup)
+		connectClients(t, server, dup)
+		err := server.Register(dup.ID(), "Josh")
 		assert.ErrorIs(t, err, ErrDuplicateUsername)
+		assert.False(t, server.IsRegistered(dup.ID()))
 	})
 
 	t.Run("room creation", func(t *testing.T) {
@@ -67,10 +71,10 @@ func TestJoin(t *testing.T) {
 	t.Run("client can join room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 
 		addRooms(t, server, room)
-		registerAndJoin(t, server, room, client)
+		registerAndJoin(t, server, room, client, "Josh")
 
 		got := server.RoomOf(client.ID())
 		assert.Equal(t, room, got)
@@ -78,11 +82,11 @@ func TestJoin(t *testing.T) {
 
 	t.Run("client can switch rooms", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 		roomA := NewRoom("A")
 		roomB := NewRoom("B")
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 		addRooms(t, server, roomA, roomB)
 
 		joinRoom(t, server, roomA, client)
@@ -95,10 +99,10 @@ func TestJoin(t *testing.T) {
 	t.Run("unknown client or room returns an error", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 
 		addRooms(t, server, room)
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 
 		err := server.Join(2, room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
@@ -111,10 +115,10 @@ func TestLeave(t *testing.T) {
 	t.Run("client can leave room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 
 		addRooms(t, server, room)
-		registerAndJoin(t, server, room, client)
+		registerAndJoin(t, server, room, client, "Josh")
 
 		err := server.Leave(client.ID(), room.ID())
 		assert.NoError(t, err)
@@ -123,11 +127,11 @@ func TestLeave(t *testing.T) {
 
 	t.Run("invalid client or room returns an error", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 		room := NewRoom("general")
 
 		addRooms(t, server, room)
-		registerAndJoin(t, server, room, client)
+		registerAndJoin(t, server, room, client, "Josh")
 
 		err := server.Leave(2, room.ID())
 		assert.ErrorIs(t, err, ErrClientNotFound)
@@ -139,9 +143,9 @@ func TestLeave(t *testing.T) {
 func TestDisconnect(t *testing.T) {
 	t.Run("remove client from registered clients", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 
 		err := server.Disconnect(client.ID())
 		require.NoError(t, err)
@@ -149,17 +153,17 @@ func TestDisconnect(t *testing.T) {
 		exists := server.clientExists(client.ID())
 		assert.False(t, exists)
 
-		exists = server.usernameExists(client.Username())
+		exists = server.usernameExists("Josh")
 		assert.False(t, exists, "username must be removed from registry")
 	})
 
 	t.Run("remove membership", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1, "Josh")
+		client := NewClient(1)
 		room := NewRoom("general")
 
 		addRooms(t, server, room)
-		registerAndJoin(t, server, room, client)
+		registerAndJoin(t, server, room, client, "Josh")
 
 		err := server.Disconnect(client.ID())
 		require.NoError(t, err)
@@ -171,19 +175,20 @@ func TestBroadcast(t *testing.T) {
 	t.Run("broadcasts to all client in that room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := newFakeClient(1, "Josh")
-		sameRoomClient := newFakeClient(2, "Friend")
-		outsider := newFakeClient(3, "outsider")
+		client := newFakeClient(1)
+		sameRoomClient := newFakeClient(2)
+		outsider := newFakeClient(3)
 
 		addRooms(t, server, room)
-		registerClients(t, server, outsider)
-		registerAndJoin(t, server, room, client, sameRoomClient)
+		connectAndRegister(t, server, outsider, "outsider")
+		registerAndJoin(t, server, room, client, "Josh")
+		registerAndJoin(t, server, room, sameRoomClient, "Friend")
 
 		content := "sample message content"
 		err := server.HandleMessage(client.ID(), content)
 		require.NoError(t, err)
 
-		expected := fmt.Sprintf("MSG %s %s %s", room.ID(), client.Username(), content)
+		expected := fmt.Sprintf("MSG %s %s %s", room.ID(), "Josh", content)
 
 		assert.Equal(t, expected, client.inbox[0])
 		assert.Equal(t, expected, sameRoomClient.inbox[0])
@@ -198,18 +203,18 @@ func TestBroadcast(t *testing.T) {
 
 	t.Run("unregistered clients gets declined", func(t *testing.T) {
 		server := NewServer()
-		client := newFakeClient(1, "")
+		client := newFakeClient(1)
 
-		registerClients(t, server, client)
+		connectClients(t, server, client)
 		err := server.HandleMessage(client.ID(), "nonsense message")
 		assert.ErrorIs(t, err, ErrUnregisteredClient)
 	})
 
 	t.Run("clients with no room are declined", func(t *testing.T) {
 		server := NewServer()
-		client := newFakeClient(1, "Josh")
+		client := newFakeClient(1)
 
-		registerClients(t, server, client)
+		connectAndRegister(t, server, client, "Josh")
 		err := server.HandleMessage(client.ID(), "sample message")
 		assert.ErrorIs(t, err, ErrNotInRoom)
 	})
@@ -217,12 +222,17 @@ func TestBroadcast(t *testing.T) {
 
 // ==== HELPER FUNCTIONS
 
-func registerClients(t testing.TB, s *Server, clients ...Client) {
+func connectClients(t testing.TB, s *Server, clients ...Client) {
 	t.Helper()
 	for _, c := range clients {
-		err := s.Register(c)
-		require.NoError(t, err)
+		require.NoError(t, s.Connect(c))
 	}
+}
+
+func connectAndRegister(t testing.TB, s *Server, client Client, username string) {
+	t.Helper()
+	connectClients(t, s, client)
+	require.NoError(t, s.Register(client.ID(), username))
 }
 
 func joinRoom(t testing.TB, s *Server, room *Room, clients ...Client) {
@@ -233,12 +243,10 @@ func joinRoom(t testing.TB, s *Server, room *Room, clients ...Client) {
 	}
 }
 
-func registerAndJoin(t testing.TB, s *Server, room *Room, clients ...Client) {
+func registerAndJoin(t testing.TB, s *Server, room *Room, client Client, username string) {
 	t.Helper()
-	registerClients(t, s, clients...)
-	for _, c := range clients {
-		joinRoom(t, s, room, c)
-	}
+	connectAndRegister(t, s, client, username)
+	joinRoom(t, s, room, client)
 }
 
 func addRooms(t testing.TB, s *Server, rooms ...*Room) {
@@ -249,10 +257,9 @@ func addRooms(t testing.TB, s *Server, rooms ...*Room) {
 	}
 }
 
-func newFakeClient(id ClientID, u string) *fakeClient {
+func newFakeClient(id ClientID) *fakeClient {
 	return &fakeClient{
 		id:    id,
-		u:     u,
 		inbox: []string{},
 	}
 }
@@ -261,12 +268,7 @@ func newFakeClient(id ClientID, u string) *fakeClient {
 
 type fakeClient struct {
 	id    ClientID
-	u     string
 	inbox []string
-}
-
-func (fc *fakeClient) Username() string {
-	return fc.u
 }
 
 func (fc *fakeClient) ID() ClientID {

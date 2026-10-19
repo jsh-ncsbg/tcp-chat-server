@@ -15,6 +15,8 @@ var (
 	ErrRoomNotFound   = errors.New("room not found")
 
 	ErrUnregisteredClient = errors.New("client not registered")
+	ErrAlreadyRegistered  = errors.New("client already registered")
+	ErrInvalidUsername    = errors.New("username must not be empty")
 	ErrNotInRoom          = errors.New("client not in a room")
 
 	// internal server errors
@@ -27,10 +29,15 @@ type Message struct {
 	Content string
 }
 
+type clientState struct {
+	connection Client
+	username   string
+}
+
 type Server struct {
 	mu sync.RWMutex
 
-	clients   map[ClientID]Client
+	clients   map[ClientID]*clientState
 	rooms     map[RoomID]*Room
 	usernames map[string]ClientID
 
@@ -39,29 +46,45 @@ type Server struct {
 
 func NewServer() *Server {
 	return &Server{
-		clients:     make(map[ClientID]Client),
+		clients:     make(map[ClientID]*clientState),
 		rooms:       make(map[RoomID]*Room),
 		usernames:   make(map[string]ClientID),
 		memberships: make(map[RoomID]map[ClientID]struct{}),
 	}
 }
 
-func (s *Server) Register(client Client) error {
+func (s *Server) Connect(client Client) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	_, ok := s.clients[client.ID()]
-	if ok {
-		return fmt.Errorf("register: %w", ErrDuplicateClientID)
+	if s.clientExists(client.ID()) {
+		return fmt.Errorf("connect: %w", ErrDuplicateClientID)
 	}
 
-	if s.usernameExists(client.Username()) {
-		return ErrDuplicateUsername
+	s.clients[client.ID()] = &clientState{connection: client}
+	return nil
+}
+
+func (s *Server) Register(clientID ClientID, username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	client, ok := s.clients[clientID]
+	if !ok {
+		return fmt.Errorf("register: %w", ErrUnknownClient)
 	}
-	if client.Username() != "" {
-		s.usernames[client.Username()] = client.ID()
+	if client.username != "" {
+		return fmt.Errorf("register: %w", ErrAlreadyRegistered)
 	}
-	s.clients[client.ID()] = client
+	if username == "" {
+		return fmt.Errorf("register: %w", ErrInvalidUsername)
+	}
+	if s.usernameExists(username) {
+		return fmt.Errorf("register: %w", ErrDuplicateUsername)
+	}
+
+	client.username = username
+	s.usernames[username] = clientID
 	return nil
 }
 
@@ -74,7 +97,7 @@ func (s *Server) IsRegistered(id ClientID) bool {
 
 func (s *Server) isRegisteredLocked(id ClientID) bool {
 	c, ok := s.clients[id]
-	return ok && c.Username() != ""
+	return ok && c.username != ""
 }
 
 func (s *Server) AddRoom(room *Room) error {
@@ -111,8 +134,11 @@ func (s *Server) Join(clientID ClientID, roomID RoomID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.isRegisteredLocked(clientID) {
+	if !s.clientExists(clientID) {
 		return fmt.Errorf("join: %w", ErrClientNotFound)
+	}
+	if !s.isRegisteredLocked(clientID) {
+		return fmt.Errorf("join: %w", ErrUnregisteredClient)
 	}
 
 	if !s.roomExistsLocked(roomID) {
@@ -131,8 +157,11 @@ func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if !s.isRegisteredLocked(clientID) {
+	if !s.clientExists(clientID) {
 		return fmt.Errorf("leave: %w", ErrClientNotFound)
+	}
+	if !s.isRegisteredLocked(clientID) {
+		return fmt.Errorf("leave: %w", ErrUnregisteredClient)
 	}
 
 	if !s.roomExistsLocked(roomID) {
@@ -195,7 +224,9 @@ func (s *Server) Disconnect(clientID ClientID) error {
 	}
 
 	delete(s.clients, clientID)
-	delete(s.usernames, client.Username())
+	if client.username != "" {
+		delete(s.usernames, client.username)
+	}
 
 	return nil
 }
@@ -208,7 +239,7 @@ func (s *Server) membersOf(roomID RoomID) []Client {
 	result := []Client{}
 	for id := range clientIDs {
 		c, _ := s.clients[id]
-		result = append(result, c)
+		result = append(result, c.connection)
 	}
 	return result
 }
@@ -237,7 +268,7 @@ func (s *Server) prepareMessage(clientID ClientID, content string) ([]Client, *R
 		return nil, nil, ErrUnknownClient
 	}
 
-	if !s.isRegisteredLocked(sender.ID()) {
+	if !s.isRegisteredLocked(clientID) {
 		return nil, nil, ErrUnregisteredClient
 	}
 
@@ -249,7 +280,7 @@ func (s *Server) prepareMessage(clientID ClientID, content string) ([]Client, *R
 	clients := s.membersOf(room.ID())
 	msg := NewMsgResponse(
 		string(room.ID()),
-		sender.Username(),
+		sender.username,
 		content,
 	)
 
