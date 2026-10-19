@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"io"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,8 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-const clientTestTimeout = 5 * time.Second
 
 func TestClientWriteLoop(t *testing.T) {
 	client, peer := newPipeClient(t)
@@ -63,8 +60,7 @@ func TestClientQueueFull(t *testing.T) {
 }
 
 func TestClientCloseBeforeWriter(t *testing.T) {
-	conn, peer := net.Pipe()
-	defer peer.Close()
+	conn, _ := newTestPipe(t)
 	var writes atomic.Int32
 	client := NewClient(1, &clientTestConn{
 		Conn: conn,
@@ -93,8 +89,7 @@ func TestClientCloseIdleWriter(t *testing.T) {
 }
 
 func TestClientCloseBlockedWriter(t *testing.T) {
-	conn, peer := net.Pipe()
-	defer peer.Close()
+	conn, _ := newTestPipe(t)
 	var writes atomic.Int32
 	started := make(chan struct{})
 	client := NewClient(1, &clientTestConn{
@@ -132,8 +127,7 @@ func TestClientWriteFailure(t *testing.T) {
 		{name: "short write", err: io.ErrShortWrite},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			conn, peer := net.Pipe()
-			defer peer.Close()
+			conn, peer := newTestPipe(t)
 			client := NewClient(1, &clientTestConn{
 				Conn: conn,
 				write: func(p []byte) (int, error) {
@@ -144,7 +138,6 @@ func TestClientWriteFailure(t *testing.T) {
 				},
 			})
 			t.Cleanup(func() { client.Close() })
-			require.NoError(t, peer.SetReadDeadline(time.Now().Add(clientTestTimeout)))
 			require.NoError(t, client.Deliver(chat.NewInfoResponse("hello")))
 
 			err := awaitClientResult(t, startClientWriter(client))
@@ -158,8 +151,7 @@ func TestClientWriteFailure(t *testing.T) {
 }
 
 func TestClientCloseResult(t *testing.T) {
-	conn, peer := net.Pipe()
-	defer peer.Close()
+	conn, _ := newTestPipe(t)
 	closeFailure := errors.New("socket close failed")
 	var closes atomic.Int32
 	client := NewClient(1, &clientTestConn{
@@ -215,61 +207,4 @@ func TestClientConcurrentDeliverAndClose(t *testing.T) {
 		require.NoError(t, awaitClientResult(t, results))
 	}
 	assert.ErrorIs(t, client.Deliver(chat.NewInfoResponse("late")), ErrClientClosed)
-}
-
-func newPipeClient(t *testing.T) (*client, net.Conn) {
-	t.Helper()
-	conn, peer := net.Pipe()
-	client := NewClient(1, conn)
-	t.Cleanup(func() {
-		client.Close()
-		peer.Close()
-	})
-	require.NoError(t, peer.SetReadDeadline(time.Now().Add(clientTestTimeout)))
-	return client, peer
-}
-
-func startClientWriter(client *client) <-chan error {
-	result := make(chan error, 1)
-	go func() { result <- client.WriteLoop() }()
-	return result
-}
-
-func awaitClientResult(t *testing.T, result <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-result:
-		return err
-	case <-time.After(clientTestTimeout):
-		t.Fatal("client operation did not finish")
-		return nil
-	}
-}
-
-type clientTestConn struct {
-	net.Conn
-	read  func([]byte) (int, error)
-	write func([]byte) (int, error)
-	close func() error
-}
-
-func (c *clientTestConn) Read(p []byte) (int, error) {
-	if c.read != nil {
-		return c.read(p)
-	}
-	return c.Conn.Read(p)
-}
-
-func (c *clientTestConn) Write(p []byte) (int, error) {
-	if c.write != nil {
-		return c.write(p)
-	}
-	return c.Conn.Write(p)
-}
-
-func (c *clientTestConn) Close() error {
-	if c.close != nil {
-		return c.close()
-	}
-	return c.Conn.Close()
 }

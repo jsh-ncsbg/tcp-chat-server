@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -167,10 +166,10 @@ func TestConnectionQuit(t *testing.T) {
 				server := newTestServer(t)
 				peer := newConnectionPeer(t, server, 1)
 				if state.registered {
-					peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+					peer.register(t, "Josh")
 				}
 				if state.joined {
-					peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+					peer.join(t, "general")
 				}
 
 				peer.send(t, " \tQUIT \t"+ending.text)
@@ -187,10 +186,10 @@ func TestConnectionQuitIgnoresBufferedCommands(t *testing.T) {
 	server := newTestServer(t)
 	sender := newConnectionPeer(t, server, 1)
 	observer := newConnectionPeer(t, server, 2)
-	sender.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	sender.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
-	observer.exchange(t, "REGISTER Observer\n", "INFO OK REGISTER\n")
-	observer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	sender.register(t, "Josh")
+	sender.join(t, "general")
+	observer.register(t, "Observer")
+	observer.join(t, "general")
 
 	sender.send(t, "QUIT\nMSG should not appear\n")
 	_, err := sender.reader.ReadByte()
@@ -202,7 +201,7 @@ func TestConnectionQuitIgnoresBufferedCommands(t *testing.T) {
 
 func TestConnectionQuitInterruptsBlockedWriter(t *testing.T) {
 	server := newTestServer(t)
-	conn, remote := net.Pipe()
+	conn, remote := newTestPipe(t)
 	started := make(chan struct{})
 	var writes atomic.Int32
 	peer := startConnectionPeer(t, server, 1, &clientTestConn{
@@ -214,8 +213,8 @@ func TestConnectionQuitInterruptsBlockedWriter(t *testing.T) {
 			return conn.Write(p)
 		},
 	}, remote)
-	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	peer.register(t, "Josh")
+	peer.join(t, "general")
 	peer.send(t, "MSG blocked\n")
 	select {
 	case <-started:
@@ -236,17 +235,17 @@ func TestConnectionRoomRouting(t *testing.T) {
 	server := newTestServer(t)
 	alice := newConnectionPeer(t, server, 1)
 	bob := newConnectionPeer(t, server, 2)
-	alice.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+	alice.register(t, "Josh")
 	bob.send(t, "REGISTER Josh\n")
 	assert.True(t, strings.HasPrefix(bob.receive(t), "ERR USERNAME_TAKEN "))
-	bob.exchange(t, "REGISTER Friend\n", "INFO OK REGISTER\n")
-	alice.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
-	bob.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	bob.register(t, "Friend")
+	alice.join(t, "general")
+	bob.join(t, "general")
 
 	alice.send(t, "MSG hello\n")
 	assert.Equal(t, "MSG general Josh hello\n", alice.receive(t))
 	assert.Equal(t, "MSG general Josh hello\n", bob.receive(t))
-	alice.exchange(t, "JOIN breakout-1\n", "INFO OK JOIN\n")
+	alice.join(t, "breakout-1")
 	bob.exchange(t, "MSG old room\n", "MSG general Friend old room\n")
 	alice.exchange(t, "MSG new room\n", "MSG breakout-1 Josh new room\n")
 	bob.exchange(t, "LEAVE\n", "INFO OK LEAVE\n")
@@ -265,8 +264,8 @@ func TestConnectionRoomRouting(t *testing.T) {
 func TestConnectionDuplicateID(t *testing.T) {
 	server := newTestServer(t)
 	original := newConnectionPeer(t, server, 1)
-	original.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	original.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	original.register(t, "Josh")
+	original.join(t, "general")
 	peer := newConnectionPeer(t, server, 1)
 
 	assert.ErrorIs(t, awaitClientResult(t, peer.result), chat.ErrDuplicateClientID)
@@ -281,8 +280,8 @@ func TestConnectionDuplicateID(t *testing.T) {
 func TestConnectionOversizedInput(t *testing.T) {
 	server := newTestServer(t)
 	peer := newConnectionPeer(t, server, 1)
-	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	peer.register(t, "Josh")
+	peer.join(t, "general")
 	io.WriteString(peer.conn, strings.Repeat("x", bufio.MaxScanTokenSize+1)+"\n")
 
 	err := awaitClientResult(t, peer.result)
@@ -293,7 +292,7 @@ func TestConnectionOversizedInput(t *testing.T) {
 
 func TestConnectionWriteFailure(t *testing.T) {
 	server := newTestServer(t)
-	conn, remote := net.Pipe()
+	conn, remote := newTestPipe(t)
 	writeFailure := errors.New("injected write failure")
 	var writes atomic.Int32
 	peer := startConnectionPeer(t, server, 1, &clientTestConn{
@@ -305,8 +304,8 @@ func TestConnectionWriteFailure(t *testing.T) {
 			return conn.Write(p)
 		},
 	}, remote)
-	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	peer.register(t, "Josh")
+	peer.join(t, "general")
 	peer.send(t, "MSG fail\n")
 
 	assert.ErrorIs(t, awaitClientResult(t, peer.result), writeFailure)
@@ -315,7 +314,7 @@ func TestConnectionWriteFailure(t *testing.T) {
 
 func TestConnectionReadAndCleanupFailure(t *testing.T) {
 	server := newTestServer(t)
-	conn, remote := net.Pipe()
+	conn, remote := newTestPipe(t)
 	input := strings.NewReader("REGISTER Josh\nJOIN general\n")
 	readFailure := errors.New("injected read failure")
 	closeFailure := errors.New("injected close failure")
@@ -343,93 +342,10 @@ func TestConnectionReadAndCleanupFailure(t *testing.T) {
 func TestConnectionResponseQueueFull(t *testing.T) {
 	server := newTestServer(t)
 	peer := newConnectionPeer(t, server, 1)
-	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
-	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	peer.register(t, "Josh")
+	peer.join(t, "general")
 	peer.send(t, strings.Repeat("JOIN general\n", MsgBufferSize+2))
 
 	assert.ErrorIs(t, awaitClientResult(t, peer.result), ErrQueueFull)
 	assertConnectionRemoved(t, server, 1, "Josh")
-}
-
-type connectionPeer struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	result <-chan error
-}
-
-func newConnectionPeer(t *testing.T, server *chat.Server, id chat.ClientID) *connectionPeer {
-	t.Helper()
-	conn, peer := net.Pipe()
-	return startConnectionPeer(t, server, id, conn, peer)
-}
-
-func startConnectionPeer(t *testing.T, server *chat.Server, id chat.ClientID, conn, peer net.Conn) *connectionPeer {
-	t.Helper()
-	require.NoError(t, peer.SetDeadline(time.Now().Add(clientTestTimeout)))
-	result := make(chan error, 1)
-	finished := make(chan struct{})
-	go func() {
-		defer close(finished)
-		result <- HandleConnection(server, id, conn)
-	}()
-	t.Cleanup(func() {
-		peer.Close()
-		select {
-		case <-finished:
-		case <-time.After(clientTestTimeout):
-			t.Error("connection handler did not finish")
-		}
-	})
-	return &connectionPeer{conn: peer, reader: bufio.NewReader(peer), result: result}
-}
-
-func (p *connectionPeer) send(t *testing.T, command string) {
-	t.Helper()
-	_, err := io.WriteString(p.conn, command)
-	require.NoError(t, err)
-}
-
-func (p *connectionPeer) receive(t *testing.T) string {
-	t.Helper()
-	line, err := p.reader.ReadString('\n')
-	require.NoError(t, err)
-	return line
-}
-
-func (p *connectionPeer) exchange(t *testing.T, command, response string) {
-	t.Helper()
-	p.send(t, command)
-	assert.Equal(t, response, p.receive(t))
-}
-
-func assertConnectionRemoved(t *testing.T, server *chat.Server, id chat.ClientID, username string) {
-	t.Helper()
-	assert.False(t, server.IsRegistered(id))
-	assert.Nil(t, server.RoomOf(id))
-	require.NoError(t, server.Connect(&cleanupProbe{id: id}))
-	defer server.Disconnect(id)
-	require.NoError(t, server.Register(id, username))
-	assert.Nil(t, server.RoomOf(id))
-	assert.ErrorIs(t, server.HandleMessage(id, "roomless"), chat.ErrNotInRoom)
-}
-
-func newTestServer(t *testing.T) *chat.Server {
-	t.Helper()
-	server := chat.NewServer()
-	for _, id := range []chat.RoomID{"general", "breakout-1"} {
-		require.NoError(t, server.AddRoom(chat.NewRoom(id)))
-	}
-	return server
-}
-
-type cleanupProbe struct {
-	id chat.ClientID
-}
-
-func (p *cleanupProbe) ID() chat.ClientID {
-	return p.id
-}
-
-func (p *cleanupProbe) Deliver(chat.Response) error {
-	return nil
 }
