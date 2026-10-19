@@ -32,6 +32,7 @@ type Message struct {
 type clientState struct {
 	connection Client
 	username   string
+	room       *Room
 }
 
 type Server struct {
@@ -145,11 +146,16 @@ func (s *Server) Join(clientID ClientID, roomID RoomID) error {
 		return fmt.Errorf("join: %w", ErrRoomNotFound)
 	}
 
-	if connectedRoom := s.roomOfLocked(clientID); connectedRoom != nil {
-		s.leave(clientID, connectedRoom.ID())
+	client := s.clients[clientID]
+	if client.room != nil {
+		if client.room.ID() == roomID {
+			return nil
+		}
+		s.leaveLocked(clientID, client.room.ID())
 	}
 
 	s.memberships[roomID][clientID] = struct{}{}
+	client.room = s.rooms[roomID]
 	return nil
 }
 
@@ -168,19 +174,19 @@ func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
 		return fmt.Errorf("leave: %w", ErrRoomNotFound)
 	}
 
-	s.leave(clientID, roomID)
+	s.leaveLocked(clientID, roomID)
 	return nil
 }
 
-func (s *Server) leave(clientID ClientID, roomID RoomID) {
-	// assumes caller has guards
-	delete(s.memberships[roomID], clientID)
-}
+// leaveLocked requires the write lock and an existing client.
+func (s *Server) leaveLocked(clientID ClientID, roomID RoomID) {
+	client := s.clients[clientID]
+	if client.room == nil || client.room.ID() != roomID {
+		return
+	}
 
-func (s *Server) isMember(clientID ClientID, roomID RoomID) bool {
-	// assume caller has guards
-	_, ok := s.memberships[roomID][clientID]
-	return ok
+	delete(s.memberships[roomID], clientID)
+	client.room = nil
 }
 
 func (s *Server) usernameExists(username string) bool {
@@ -201,12 +207,11 @@ func (s *Server) RoomOf(clientID ClientID) *Room {
 }
 
 func (s *Server) roomOfLocked(clientID ClientID) *Room {
-	for _, room := range s.rooms {
-		if s.isMember(clientID, room.ID()) {
-			return room
-		}
+	client, ok := s.clients[clientID]
+	if !ok {
+		return nil
 	}
-	return nil
+	return client.room
 }
 
 func (s *Server) Disconnect(clientID ClientID) error {
@@ -218,9 +223,8 @@ func (s *Server) Disconnect(clientID ClientID) error {
 		return ErrClientNotFound
 	}
 
-	connectedRoom := s.roomOfLocked(clientID)
-	if connectedRoom != nil {
-		s.leave(clientID, connectedRoom.ID())
+	if client.room != nil {
+		s.leaveLocked(clientID, client.room.ID())
 	}
 
 	delete(s.clients, clientID)
