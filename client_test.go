@@ -247,8 +247,16 @@ func awaitClientResult(t *testing.T, result <-chan error) error {
 
 type clientTestConn struct {
 	net.Conn
+	read  func([]byte) (int, error)
 	write func([]byte) (int, error)
 	close func() error
+}
+
+func (c *clientTestConn) Read(p []byte) (int, error) {
+	if c.read != nil {
+		return c.read(p)
+	}
+	return c.Conn.Read(p)
 }
 
 func (c *clientTestConn) Write(p []byte) (int, error) {
