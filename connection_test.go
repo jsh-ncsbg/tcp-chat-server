@@ -24,7 +24,8 @@ func TestParseCommand(t *testing.T) {
 	}{
 		{line: "REGISTER Josh", name: "REGISTER", argument: "Josh"},
 		{line: " \tJOIN\t general  ", name: "JOIN", argument: "general"},
-		{line: "LEAVE breakout-1", name: "LEAVE", argument: "breakout-1"},
+		{line: "LEAVE", name: "LEAVE"},
+		{line: " \tLEAVE \t", name: "LEAVE"},
 		{line: "MSG\t hello  world  ", name: "MSG", argument: "hello  world  "},
 		{line: "", err: errInvalidCommand},
 		{line: " \t", err: errInvalidCommand},
@@ -34,7 +35,7 @@ func TestParseCommand(t *testing.T) {
 		{line: "REGISTER Josh Smith", err: errInvalidArguments},
 		{line: "REGISTER Josh\u2003Smith", err: errInvalidArguments},
 		{line: "JOIN general extra", err: errInvalidArguments},
-		{line: "LEAVE", err: errInvalidArguments},
+		{line: "LEAVE breakout-1", err: errInvalidArguments},
 		{line: "MSG", err: errInvalidArguments},
 		{line: "MSG \t\u2003", err: errInvalidArguments},
 	} {
@@ -92,10 +93,10 @@ func TestConnectionCommandRecovery(t *testing.T) {
 		{"REGISTER\n", "INVALID_ARGUMENTS"},
 		{"REGISTER Josh Smith\n", "INVALID_ARGUMENTS"},
 		{"JOIN general extra\n", "INVALID_ARGUMENTS"},
-		{"LEAVE\n", "INVALID_ARGUMENTS"},
+		{"LEAVE general\n", "INVALID_ARGUMENTS"},
 		{"MSG \t\n", "INVALID_ARGUMENTS"},
 		{"JOIN general\n", "UNREGISTERED"},
-		{"LEAVE general\n", "UNREGISTERED"},
+		{"LEAVE\n", "UNREGISTERED"},
 		{"MSG hello\n", "UNREGISTERED"},
 	} {
 		peer.send(t, tt.command)
@@ -114,7 +115,7 @@ func TestConnectionCommandRecovery(t *testing.T) {
 		{"REGISTER James\n", "ALREADY_REGISTERED"},
 		{"MSG hello\n", "NOT_IN_ROOM"},
 		{"JOIN missing\n", "ROOM_NOT_FOUND"},
-		{"LEAVE missing\n", "ROOM_NOT_FOUND"},
+		{"LEAVE missing\n", "INVALID_ARGUMENTS"},
 	} {
 		peer.send(t, tt.command)
 		response := peer.receive(t)
@@ -122,6 +123,14 @@ func TestConnectionCommandRecovery(t *testing.T) {
 	}
 	peer.exchange(t, " \tJOIN\tgeneral \r\n", "INFO OK JOIN\n")
 	peer.exchange(t, "MSG hello  world  \n", "MSG general Josh hello  world  \n")
+	peer.send(t, "LEAVE general\n")
+	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR INVALID_ARGUMENTS "))
+	assert.Same(t, server.rooms["general"], server.RoomOf(1))
+	peer.exchange(t, "LEAVE\r\n", "INFO OK LEAVE\n")
+	assert.Nil(t, server.RoomOf(1))
+	peer.exchange(t, "LEAVE \t\n", "INFO OK LEAVE\n")
+	peer.send(t, "MSG roomless\n")
+	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR NOT_IN_ROOM "))
 	require.NoError(t, peer.conn.Close())
 	require.NoError(t, awaitClientResult(t, peer.result))
 	assertConnectionRemoved(t, server, 1, "Josh")
@@ -145,8 +154,8 @@ func TestConnectionRoomRouting(t *testing.T) {
 	alice.exchange(t, "JOIN breakout-1\n", "INFO OK JOIN\n")
 	bob.exchange(t, "MSG old room\n", "MSG general Friend old room\n")
 	alice.exchange(t, "MSG new room\n", "MSG breakout-1 Josh new room\n")
-	bob.exchange(t, "LEAVE general\n", "INFO OK LEAVE\n")
-	alice.exchange(t, "LEAVE breakout-1\n", "INFO OK LEAVE\n")
+	bob.exchange(t, "LEAVE\n", "INFO OK LEAVE\n")
+	alice.exchange(t, "LEAVE\n", "INFO OK LEAVE\n")
 	alice.send(t, "MSG roomless\n")
 	assert.True(t, strings.HasPrefix(alice.receive(t), "ERR NOT_IN_ROOM "))
 

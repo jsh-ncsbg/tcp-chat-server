@@ -59,12 +59,17 @@ func parseCommand(line string) (string, string, error) {
 	}
 
 	switch name {
-	case "REGISTER", "JOIN", "LEAVE":
+	case "REGISTER", "JOIN":
 		arguments := strings.Fields(argument)
 		if len(arguments) != 1 {
 			return "", "", fmt.Errorf("%w: %s requires one name", errInvalidArguments, name)
 		}
 		return name, arguments[0], nil
+	case "LEAVE":
+		if strings.TrimSpace(argument) != "" {
+			return "", "", fmt.Errorf("%w: LEAVE takes no arguments", errInvalidArguments)
+		}
+		return name, "", nil
 	case "MSG":
 		if strings.TrimSpace(argument) == "" {
 			return "", "", fmt.Errorf("%w: MSG requires message text", errInvalidArguments)
@@ -84,7 +89,7 @@ func dispatchCommand(server *Server, id ClientID, line string) *Response {
 		case "JOIN":
 			err = server.Join(id, RoomID(argument))
 		case "LEAVE":
-			err = server.Leave(id, RoomID(argument))
+			err = server.Leave(id)
 		case "MSG":
 			err = server.HandleMessage(id, argument)
 		}

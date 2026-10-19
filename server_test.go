@@ -155,17 +155,17 @@ func TestLeave(t *testing.T) {
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
-		err := server.Leave(client.ID(), room.ID())
+		err := server.Leave(client.ID())
 		assert.NoError(t, err)
 		assert.Nil(t, server.RoomOf(client.ID()))
 		assert.Empty(t, server.memberships[room.ID()])
 
-		require.NoError(t, server.Leave(client.ID(), room.ID()))
+		require.NoError(t, server.Leave(client.ID()))
 		assert.Nil(t, server.RoomOf(client.ID()))
 		assert.Empty(t, server.memberships[room.ID()])
 	})
 
-	t.Run("leaving a different room preserves current membership", func(t *testing.T) {
+	t.Run("leaving after a switch preserves other clients", func(t *testing.T) {
 		server := NewServer()
 		roomA := NewRoom("A")
 		roomB := NewRoom("B")
@@ -174,27 +174,27 @@ func TestLeave(t *testing.T) {
 		addRooms(t, server, roomA, roomB)
 		registerAndJoin(t, server, roomA, client, "Josh")
 		registerAndJoin(t, server, roomB, other, "Friend")
+		require.NoError(t, server.Join(client.ID(), roomB.ID()))
 
-		require.NoError(t, server.Leave(client.ID(), roomB.ID()))
-		assert.Same(t, roomA, server.RoomOf(client.ID()))
+		require.NoError(t, server.Leave(client.ID()))
+		assert.Nil(t, server.RoomOf(client.ID()))
 		assert.Same(t, roomB, server.RoomOf(other.ID()))
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[roomA.ID()])
+		assert.Empty(t, server.memberships[roomA.ID()])
 		assert.Equal(t, map[ClientID]struct{}{other.ID(): {}}, server.memberships[roomB.ID()])
 	})
 
-	t.Run("roomless client can leave an existing room", func(t *testing.T) {
+	t.Run("roomless client can leave without any rooms", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
 		client := newFakeClient(1)
-		addRooms(t, server, room)
 		connectAndRegister(t, server, client, "Josh")
 
-		require.NoError(t, server.Leave(client.ID(), room.ID()))
+		require.NoError(t, server.Leave(client.ID()))
 		assert.Nil(t, server.RoomOf(client.ID()))
-		assert.Empty(t, server.memberships[room.ID()])
+		assert.Empty(t, server.memberships)
+		assert.True(t, server.IsRegistered(client.ID()))
 	})
 
-	t.Run("invalid client or room returns an error", func(t *testing.T) {
+	t.Run("unknown or unauthenticated client returns an error", func(t *testing.T) {
 		server := NewServer()
 		client := newFakeClient(1)
 		room := NewRoom("general")
@@ -202,10 +202,10 @@ func TestLeave(t *testing.T) {
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
-		err := server.Leave(2, room.ID())
+		err := server.Leave(2)
 		assert.ErrorIs(t, err, ErrClientNotFound)
-		err = server.Leave(client.ID(), "unknown")
-		assert.ErrorIs(t, err, ErrRoomNotFound)
+		connectClients(t, server, newFakeClient(2))
+		assert.ErrorIs(t, server.Leave(2), ErrUnregisteredClient)
 		assert.Same(t, room, server.RoomOf(client.ID()))
 		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
 	})

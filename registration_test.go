@@ -94,23 +94,21 @@ func TestRegister(t *testing.T) {
 }
 
 func TestUnauthenticatedRoomOperations(t *testing.T) {
-	for _, operation := range []string{"join", "leave"} {
-		t.Run(operation, func(t *testing.T) {
+	for _, operation := range []struct {
+		name string
+		run  func(*Server, ClientID) error
+	}{
+		{"join existing room", func(server *Server, id ClientID) error { return server.Join(id, "general") }},
+		{"join missing room", func(server *Server, id ClientID) error { return server.Join(id, "missing") }},
+		{"leave", func(server *Server, id ClientID) error { return server.Leave(id) }},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
 			server := NewServer()
 			room := NewRoom("general")
 			addRooms(t, server, room)
 			connectClients(t, server, newFakeClient(1))
-			var roomOperation func(ClientID, RoomID) error
-			if operation == "join" {
-				roomOperation = server.Join
-			} else {
-				roomOperation = server.Leave
-			}
-
-			for _, roomID := range []RoomID{room.ID(), "missing"} {
-				assert.ErrorIs(t, roomOperation(1, roomID), ErrUnregisteredClient)
-				assert.ErrorIs(t, roomOperation(2, roomID), ErrClientNotFound)
-			}
+			assert.ErrorIs(t, operation.run(server, 1), ErrUnregisteredClient)
+			assert.ErrorIs(t, operation.run(server, 2), ErrClientNotFound)
 			assert.Nil(t, server.RoomOf(1))
 			assert.Empty(t, server.memberships[room.ID()])
 		})

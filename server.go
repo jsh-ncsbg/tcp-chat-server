@@ -151,7 +151,7 @@ func (s *Server) Join(clientID ClientID, roomID RoomID) error {
 		if client.room.ID() == roomID {
 			return nil
 		}
-		s.leaveLocked(clientID, client.room.ID())
+		s.leaveLocked(clientID)
 	}
 
 	s.memberships[roomID][clientID] = struct{}{}
@@ -159,7 +159,7 @@ func (s *Server) Join(clientID ClientID, roomID RoomID) error {
 	return nil
 }
 
-func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
+func (s *Server) Leave(clientID ClientID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -170,22 +170,18 @@ func (s *Server) Leave(clientID ClientID, roomID RoomID) error {
 		return fmt.Errorf("leave: %w", ErrUnregisteredClient)
 	}
 
-	if !s.roomExistsLocked(roomID) {
-		return fmt.Errorf("leave: %w", ErrRoomNotFound)
-	}
-
-	s.leaveLocked(clientID, roomID)
+	s.leaveLocked(clientID)
 	return nil
 }
 
 // leaveLocked requires the write lock and an existing client.
-func (s *Server) leaveLocked(clientID ClientID, roomID RoomID) {
+func (s *Server) leaveLocked(clientID ClientID) {
 	client := s.clients[clientID]
-	if client.room == nil || client.room.ID() != roomID {
+	if client.room == nil {
 		return
 	}
 
-	delete(s.memberships[roomID], clientID)
+	delete(s.memberships[client.room.ID()], clientID)
 	client.room = nil
 }
 
@@ -223,9 +219,7 @@ func (s *Server) Disconnect(clientID ClientID) error {
 		return ErrClientNotFound
 	}
 
-	if client.room != nil {
-		s.leaveLocked(clientID, client.room.ID())
-	}
+	s.leaveLocked(clientID)
 
 	delete(s.clients, clientID)
 	if client.username != "" {
