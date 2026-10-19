@@ -27,11 +27,14 @@ func TestParseCommand(t *testing.T) {
 		{line: " \tJOIN\t general  ", name: "JOIN", argument: "general"},
 		{line: "LEAVE", name: "LEAVE"},
 		{line: " \tLEAVE \t", name: "LEAVE"},
+		{line: "QUIT", name: "QUIT"},
+		{line: " \tQUIT \t", name: "QUIT"},
 		{line: "MSG\t hello  world  ", name: "MSG", argument: "hello  world  "},
 		{line: "", err: errInvalidCommand},
 		{line: " \t", err: errInvalidCommand},
 		{line: "register Josh", err: errInvalidCommand},
-		{line: "QUIT", err: errInvalidCommand},
+		{line: "quit", err: errInvalidCommand},
+		{line: "QUIT now", err: errInvalidArguments},
 		{line: "REGISTER", err: errInvalidArguments},
 		{line: "REGISTER Josh Smith", err: errInvalidArguments},
 		{line: "REGISTER Josh\u2003Smith", err: errInvalidArguments},
@@ -90,6 +93,8 @@ func TestConnectionCommandRecovery(t *testing.T) {
 		{"\n", "INVALID_COMMAND"},
 		{"register Josh\n", "INVALID_COMMAND"},
 		{"CREATE room\n", "INVALID_COMMAND"},
+		{"quit\n", "INVALID_COMMAND"},
+		{"QUIT now\n", "INVALID_ARGUMENTS"},
 		{"REGISTER\n", "INVALID_ARGUMENTS"},
 		{"REGISTER Josh Smith\n", "INVALID_ARGUMENTS"},
 		{"JOIN general extra\n", "INVALID_ARGUMENTS"},
@@ -123,6 +128,10 @@ func TestConnectionCommandRecovery(t *testing.T) {
 	}
 	peer.exchange(t, " \tJOIN\tgeneral \r\n", "INFO OK JOIN\n")
 	peer.exchange(t, "MSG hello  world  \n", "MSG general Josh hello  world  \n")
+	peer.send(t, "QUIT now\n")
+	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR INVALID_ARGUMENTS "))
+	assert.True(t, server.IsRegistered(1))
+	peer.exchange(t, "MSG still here\n", "MSG general Josh still here\n")
 	peer.send(t, "LEAVE general\n")
 	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR INVALID_ARGUMENTS "))
 	require.NotNil(t, server.RoomOf(1))
@@ -134,6 +143,92 @@ func TestConnectionCommandRecovery(t *testing.T) {
 	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR NOT_IN_ROOM "))
 	require.NoError(t, peer.conn.Close())
 	require.NoError(t, awaitClientResult(t, peer.result))
+	assertConnectionRemoved(t, server, 1, "Josh")
+}
+
+func TestConnectionQuit(t *testing.T) {
+	for _, state := range []struct {
+		name       string
+		registered bool
+		joined     bool
+	}{
+		{name: "unauthenticated"},
+		{name: "registered", registered: true},
+		{name: "joined", registered: true, joined: true},
+	} {
+		for _, ending := range []struct {
+			name string
+			text string
+		}{
+			{name: "LF", text: "\n"},
+			{name: "CRLF", text: "\r\n"},
+		} {
+			t.Run(state.name+"/"+ending.name, func(t *testing.T) {
+				server := newTestServer(t)
+				peer := newConnectionPeer(t, server, 1)
+				if state.registered {
+					peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+				}
+				if state.joined {
+					peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+				}
+
+				peer.send(t, " \tQUIT \t"+ending.text)
+				_, err := peer.reader.ReadByte()
+				require.ErrorIs(t, err, io.EOF)
+				require.NoError(t, awaitClientResult(t, peer.result))
+				assertConnectionRemoved(t, server, 1, "Josh")
+			})
+		}
+	}
+}
+
+func TestConnectionQuitIgnoresBufferedCommands(t *testing.T) {
+	server := newTestServer(t)
+	sender := newConnectionPeer(t, server, 1)
+	observer := newConnectionPeer(t, server, 2)
+	sender.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+	sender.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	observer.exchange(t, "REGISTER Observer\n", "INFO OK REGISTER\n")
+	observer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+
+	sender.send(t, "QUIT\nMSG should not appear\n")
+	_, err := sender.reader.ReadByte()
+	require.ErrorIs(t, err, io.EOF)
+	require.NoError(t, awaitClientResult(t, sender.result))
+	assertConnectionRemoved(t, server, 1, "Josh")
+	observer.exchange(t, "MSG marker\n", "MSG general Observer marker\n")
+}
+
+func TestConnectionQuitInterruptsBlockedWriter(t *testing.T) {
+	server := newTestServer(t)
+	conn, remote := net.Pipe()
+	started := make(chan struct{})
+	var writes atomic.Int32
+	peer := startConnectionPeer(t, server, 1, &clientTestConn{
+		Conn: conn,
+		write: func(p []byte) (int, error) {
+			if writes.Add(1) == 3 {
+				close(started)
+			}
+			return conn.Write(p)
+		},
+	}, remote)
+	peer.exchange(t, "REGISTER Josh\n", "INFO OK REGISTER\n")
+	peer.exchange(t, "JOIN general\n", "INFO OK JOIN\n")
+	peer.send(t, "MSG blocked\n")
+	select {
+	case <-started:
+	case <-time.After(clientTestTimeout):
+		t.Fatal("writer did not start socket I/O")
+	}
+	require.NoError(t, server.HandleMessage(1, "pending"))
+
+	peer.send(t, "QUIT\n")
+	require.NoError(t, awaitClientResult(t, peer.result))
+	_, err := peer.reader.ReadByte()
+	require.ErrorIs(t, err, io.EOF)
+	assert.Equal(t, int32(3), writes.Load())
 	assertConnectionRemoved(t, server, 1, "Josh")
 }
 

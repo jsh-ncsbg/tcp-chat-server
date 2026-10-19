@@ -40,7 +40,11 @@ func HandleConnection(server *chat.Server, id chat.ClientID, conn net.Conn) (res
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
-		if response := dispatchCommand(server, id, scanner.Text()); response != nil {
+		response, quit := dispatchCommand(server, id, scanner.Text())
+		if quit {
+			return nil
+		}
+		if response != nil {
 			if err := client.Deliver(*response); err != nil {
 				return fmt.Errorf("connection response: %w", err)
 			}
@@ -67,9 +71,9 @@ func parseCommand(line string) (string, string, error) {
 			return "", "", fmt.Errorf("%w: %s requires one name", errInvalidArguments, name)
 		}
 		return name, arguments[0], nil
-	case "LEAVE":
+	case "LEAVE", "QUIT":
 		if strings.TrimSpace(argument) != "" {
-			return "", "", fmt.Errorf("%w: LEAVE takes no arguments", errInvalidArguments)
+			return "", "", fmt.Errorf("%w: %s takes no arguments", errInvalidArguments, name)
 		}
 		return name, "", nil
 	case "MSG":
@@ -82,7 +86,7 @@ func parseCommand(line string) (string, string, error) {
 	}
 }
 
-func dispatchCommand(server *chat.Server, id chat.ClientID, line string) *chat.Response {
+func dispatchCommand(server *chat.Server, id chat.ClientID, line string) (*chat.Response, bool) {
 	name, argument, err := parseCommand(line)
 	if err == nil {
 		switch name {
@@ -94,17 +98,19 @@ func dispatchCommand(server *chat.Server, id chat.ClientID, line string) *chat.R
 			err = server.Leave(id)
 		case "MSG":
 			err = server.HandleMessage(id, argument)
+		case "QUIT":
+			return nil, true
 		}
 	}
 	if err != nil {
 		response := commandErrorResponse(err)
-		return &response
+		return &response, false
 	}
 	if name == "MSG" {
-		return nil
+		return nil, false
 	}
 	response := chat.NewInfoResponse("OK " + name)
-	return &response
+	return &response, false
 }
 
 func commandErrorResponse(err error) chat.Response {

@@ -29,7 +29,9 @@ func TestServeConnections(t *testing.T) {
 	alice.send(t, "MSG hello\n")
 	assert.Equal(t, "MSG general Josh hello\n", alice.receive(t))
 	assert.Equal(t, "MSG general Josh hello\n", bob.receive(t))
-	require.NoError(t, alice.conn.Close())
+	alice.send(t, "QUIT\n")
+	_, err := alice.reader.ReadByte()
+	require.ErrorIs(t, err, io.EOF)
 	require.Eventually(t, func() bool { return !server.IsRegistered(1) }, clientTestTimeout, time.Millisecond)
 
 	charlie := dialTestListener(t, server, listener, 3)
