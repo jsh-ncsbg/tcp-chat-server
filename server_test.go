@@ -12,7 +12,7 @@ import (
 func TestServer(t *testing.T) {
 	t.Run("client can register", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(2)
+		client := newFakeClient(2)
 
 		connectAndRegister(t, server, client, "Josh")
 
@@ -23,8 +23,8 @@ func TestServer(t *testing.T) {
 	t.Run("duplicate client id is handled", func(t *testing.T) {
 		// server error
 		server := NewServer()
-		client := NewClient(2)
-		dup := NewClient(2)
+		client := newFakeClient(2)
+		dup := newFakeClient(2)
 
 		connectAndRegister(t, server, client, "Josh")
 
@@ -36,8 +36,8 @@ func TestServer(t *testing.T) {
 
 	t.Run("duplicate username is rejected", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1)
-		dup := NewClient(2)
+		client := newFakeClient(1)
+		dup := newFakeClient(2)
 
 		connectAndRegister(t, server, client, "Josh")
 
@@ -74,7 +74,7 @@ func TestRoomOf(t *testing.T) {
 	addRooms(t, server, room)
 
 	assert.Nil(t, server.RoomOf(1))
-	connectClients(t, server, NewClient(1))
+	connectClients(t, server, newFakeClient(1))
 	assert.Nil(t, server.RoomOf(1))
 	require.NoError(t, server.Register(1, "Josh"))
 	assert.Nil(t, server.RoomOf(1))
@@ -85,7 +85,7 @@ func TestJoin(t *testing.T) {
 	t.Run("client can join room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1)
+		client := newFakeClient(1)
 
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
@@ -102,7 +102,7 @@ func TestJoin(t *testing.T) {
 
 	t.Run("client can switch rooms", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1)
+		client := newFakeClient(1)
 		roomA := NewRoom("A")
 		roomB := NewRoom("B")
 
@@ -121,7 +121,7 @@ func TestJoin(t *testing.T) {
 	t.Run("failed room switch preserves current membership", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1)
+		client := newFakeClient(1)
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
@@ -134,7 +134,7 @@ func TestJoin(t *testing.T) {
 	t.Run("unknown client or room returns an error", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1)
+		client := newFakeClient(1)
 
 		addRooms(t, server, room)
 		connectAndRegister(t, server, client, "Josh")
@@ -150,7 +150,7 @@ func TestLeave(t *testing.T) {
 	t.Run("client can leave room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1)
+		client := newFakeClient(1)
 
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
@@ -169,8 +169,8 @@ func TestLeave(t *testing.T) {
 		server := NewServer()
 		roomA := NewRoom("A")
 		roomB := NewRoom("B")
-		client := NewClient(1)
-		other := NewClient(2)
+		client := newFakeClient(1)
+		other := newFakeClient(2)
 		addRooms(t, server, roomA, roomB)
 		registerAndJoin(t, server, roomA, client, "Josh")
 		registerAndJoin(t, server, roomB, other, "Friend")
@@ -185,7 +185,7 @@ func TestLeave(t *testing.T) {
 	t.Run("roomless client can leave an existing room", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")
-		client := NewClient(1)
+		client := newFakeClient(1)
 		addRooms(t, server, room)
 		connectAndRegister(t, server, client, "Josh")
 
@@ -196,7 +196,7 @@ func TestLeave(t *testing.T) {
 
 	t.Run("invalid client or room returns an error", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1)
+		client := newFakeClient(1)
 		room := NewRoom("general")
 
 		addRooms(t, server, room)
@@ -214,7 +214,7 @@ func TestLeave(t *testing.T) {
 func TestDisconnect(t *testing.T) {
 	t.Run("remove client from registered clients", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1)
+		client := newFakeClient(1)
 
 		connectAndRegister(t, server, client, "Josh")
 
@@ -230,7 +230,7 @@ func TestDisconnect(t *testing.T) {
 
 	t.Run("remove membership", func(t *testing.T) {
 		server := NewServer()
-		client := NewClient(1)
+		client := newFakeClient(1)
 		room := NewRoom("general")
 
 		addRooms(t, server, room)
@@ -318,7 +318,7 @@ func TestBroadcast(t *testing.T) {
 
 func TestConcurrentJoin(t *testing.T) {
 	server := NewServer()
-	client := NewClient(1)
+	client := newFakeClient(1)
 	rooms := []*Room{NewRoom("A"), NewRoom("B")}
 	addRooms(t, server, rooms...)
 	connectAndRegister(t, server, client, "Josh")
