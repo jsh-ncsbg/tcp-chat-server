@@ -9,44 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestServer(t *testing.T) {
-	t.Run("client can register", func(t *testing.T) {
-		server := NewServer()
-		client := newFakeClient(2)
-
-		connectAndRegister(t, server, client, "Josh")
-
-		assert.True(t, server.IsRegistered(client.ID()))
-		assert.False(t, server.IsRegistered(1))
-	})
-
-	t.Run("duplicate client id is handled", func(t *testing.T) {
-		// server error
-		server := NewServer()
-		client := newFakeClient(2)
-		dup := newFakeClient(2)
-
-		connectAndRegister(t, server, client, "Josh")
-
-		err := server.Connect(dup)
-		assert.ErrorIs(t, err, ErrDuplicateClientID)
-		assert.Same(t, client, server.clients[client.ID()].connection)
-		assert.True(t, server.IsRegistered(client.ID()))
-	})
-
-	t.Run("duplicate username is rejected", func(t *testing.T) {
-		server := NewServer()
-		client := newFakeClient(1)
-		dup := newFakeClient(2)
-
-		connectAndRegister(t, server, client, "Josh")
-
-		connectClients(t, server, dup)
-		err := server.Register(dup.ID(), "Josh")
-		assert.ErrorIs(t, err, ErrDuplicateUsername)
-		assert.False(t, server.IsRegistered(dup.ID()))
-	})
-
+func TestAddRoom(t *testing.T) {
 	t.Run("room creation", func(t *testing.T) {
 		server := NewServer()
 		room := NewRoom("general")

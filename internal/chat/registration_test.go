@@ -24,6 +24,10 @@ func TestConnect(t *testing.T) {
 
 	require.NoError(t, server.Register(client.ID(), "Josh"))
 	assert.True(t, server.IsRegistered(client.ID()))
+	assert.False(t, server.IsRegistered(2))
+	assert.ErrorIs(t, server.Connect(newFakeClient(client.ID())), ErrDuplicateClientID)
+	assert.Same(t, client, server.clients[client.ID()].connection)
+	assert.True(t, server.IsRegistered(client.ID()))
 }
 
 func TestRegister(t *testing.T) {
