@@ -12,103 +12,128 @@ import (
 func TestAddRoom(t *testing.T) {
 	t.Run("room creation", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 
 		addRooms(t, server, room)
 
-		assert.True(t, server.RoomExists(room.ID()))
+		assert.True(t, server.RoomExists(room))
 	})
 
 	t.Run("reject duplicate room name", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
-		dup := NewRoom("general")
+		room := RoomID("general")
+		client := newFakeClient(1)
 
 		addRooms(t, server, room)
+		registerAndJoin(t, server, room, client, "Josh")
 
-		err := server.AddRoom(dup)
+		err := server.AddRoom(room)
 		assert.ErrorIs(t, err, ErrDuplicateRoom)
+		assertRoomOf(t, server, client.ID(), room)
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 	})
 }
 
 func TestNewServerStartsWithoutRooms(t *testing.T) {
 	server := NewServer()
-	assert.Empty(t, server.rooms)
 	assert.Empty(t, server.memberships)
 }
 
 func TestRoomOf(t *testing.T) {
 	server := NewServer()
-	room := NewRoom("general")
+	room := RoomID("general")
 	addRooms(t, server, room)
 
-	assert.Nil(t, server.RoomOf(1))
+	assertNoRoom(t, server, 1)
 	connectClients(t, server, newFakeClient(1))
-	assert.Nil(t, server.RoomOf(1))
+	assertNoRoom(t, server, 1)
 	require.NoError(t, server.Register(1, "Josh"))
-	assert.Nil(t, server.RoomOf(1))
-	assert.Empty(t, server.memberships[room.ID()])
+	assertNoRoom(t, server, 1)
+	assert.Empty(t, server.memberships[room])
+}
+
+func TestEmptyRoomID(t *testing.T) {
+	server := NewServer()
+	client := newFakeClient(1)
+	addRooms(t, server, "", "general")
+	connectAndRegister(t, server, client, "Josh")
+	assertNoRoom(t, server, client.ID())
+
+	require.NoError(t, server.Join(client.ID(), ""))
+	assertRoomOf(t, server, client.ID(), "")
+	require.NoError(t, server.Join(client.ID(), ""))
+	require.NoError(t, server.HandleMessage(client.ID(), "hello"))
+	assert.Equal(t, []string{"MSG  Josh hello"}, client.inbox)
+
+	require.NoError(t, server.Join(client.ID(), "general"))
+	assertRoomOf(t, server, client.ID(), "general")
+	assert.Empty(t, server.memberships[""])
+	require.NoError(t, server.Join(client.ID(), ""))
+	require.NoError(t, server.Leave(client.ID()))
+	assertNoRoom(t, server, client.ID())
+	assert.Empty(t, server.memberships[""])
+	assert.True(t, server.RoomExists(""))
+	assert.ErrorIs(t, server.HandleMessage(client.ID(), "roomless"), ErrNotInRoom)
 }
 
 func TestJoin(t *testing.T) {
 	t.Run("client can join room", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		client := newFakeClient(1)
 
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
-		got := server.RoomOf(client.ID())
-		assert.Same(t, room, got)
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
+		assertRoomOf(t, server, client.ID(), room)
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 
-		// Rejoining the same room preserves its canonical pointer and membership.
-		require.NoError(t, server.Join(client.ID(), room.ID()))
-		assert.Same(t, room, server.RoomOf(client.ID()))
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
+		// Rejoining the same room preserves its membership.
+		require.NoError(t, server.Join(client.ID(), room))
+		assertRoomOf(t, server, client.ID(), room)
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 	})
 
 	t.Run("client can switch rooms", func(t *testing.T) {
 		server := NewServer()
 		client := newFakeClient(1)
-		roomA := NewRoom("A")
-		roomB := NewRoom("B")
+		roomA := RoomID("A")
+		roomB := RoomID("B")
 
 		connectAndRegister(t, server, client, "Josh")
 		addRooms(t, server, roomA, roomB)
 
 		joinRoom(t, server, roomA, client)
-		require.Equal(t, roomA, server.RoomOf(client.ID()))
+		assertRoomOf(t, server, client.ID(), roomA)
 
 		joinRoom(t, server, roomB, client)
-		require.Same(t, roomB, server.RoomOf(client.ID()))
-		assert.Empty(t, server.memberships[roomA.ID()])
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[roomB.ID()])
+		assertRoomOf(t, server, client.ID(), roomB)
+		assert.Empty(t, server.memberships[roomA])
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[roomB])
 	})
 
 	t.Run("failed room switch preserves current membership", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		client := newFakeClient(1)
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
 		assert.ErrorIs(t, server.Join(client.ID(), "unknown"), ErrRoomNotFound)
-		assert.Same(t, room, server.RoomOf(client.ID()))
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
+		assertRoomOf(t, server, client.ID(), room)
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 		assert.NotContains(t, server.memberships, RoomID("unknown"))
 	})
 
 	t.Run("unknown client or room returns an error", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		client := newFakeClient(1)
 
 		addRooms(t, server, room)
 		connectAndRegister(t, server, client, "Josh")
 
-		err := server.Join(2, room.ID())
+		err := server.Join(2, room)
 		assert.ErrorIs(t, err, ErrClientNotFound)
 		err = server.Join(client.ID(), "unknown")
 		assert.ErrorIs(t, err, ErrRoomNotFound)
@@ -118,7 +143,7 @@ func TestJoin(t *testing.T) {
 func TestLeave(t *testing.T) {
 	t.Run("client can leave room", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		client := newFakeClient(1)
 
 		addRooms(t, server, room)
@@ -126,30 +151,31 @@ func TestLeave(t *testing.T) {
 
 		err := server.Leave(client.ID())
 		assert.NoError(t, err)
-		assert.Nil(t, server.RoomOf(client.ID()))
-		assert.Empty(t, server.memberships[room.ID()])
+		assertNoRoom(t, server, client.ID())
+		assert.Empty(t, server.memberships[room])
+		assert.True(t, server.RoomExists(room))
 
 		require.NoError(t, server.Leave(client.ID()))
-		assert.Nil(t, server.RoomOf(client.ID()))
-		assert.Empty(t, server.memberships[room.ID()])
+		assertNoRoom(t, server, client.ID())
+		assert.Empty(t, server.memberships[room])
 	})
 
 	t.Run("leaving after a switch preserves other clients", func(t *testing.T) {
 		server := NewServer()
-		roomA := NewRoom("A")
-		roomB := NewRoom("B")
+		roomA := RoomID("A")
+		roomB := RoomID("B")
 		client := newFakeClient(1)
 		other := newFakeClient(2)
 		addRooms(t, server, roomA, roomB)
 		registerAndJoin(t, server, roomA, client, "Josh")
 		registerAndJoin(t, server, roomB, other, "Friend")
-		require.NoError(t, server.Join(client.ID(), roomB.ID()))
+		require.NoError(t, server.Join(client.ID(), roomB))
 
 		require.NoError(t, server.Leave(client.ID()))
-		assert.Nil(t, server.RoomOf(client.ID()))
-		assert.Same(t, roomB, server.RoomOf(other.ID()))
-		assert.Empty(t, server.memberships[roomA.ID()])
-		assert.Equal(t, map[ClientID]struct{}{other.ID(): {}}, server.memberships[roomB.ID()])
+		assertNoRoom(t, server, client.ID())
+		assertRoomOf(t, server, other.ID(), roomB)
+		assert.Empty(t, server.memberships[roomA])
+		assert.Equal(t, map[ClientID]struct{}{other.ID(): {}}, server.memberships[roomB])
 	})
 
 	t.Run("roomless client can leave without any rooms", func(t *testing.T) {
@@ -158,7 +184,7 @@ func TestLeave(t *testing.T) {
 		connectAndRegister(t, server, client, "Josh")
 
 		require.NoError(t, server.Leave(client.ID()))
-		assert.Nil(t, server.RoomOf(client.ID()))
+		assertNoRoom(t, server, client.ID())
 		assert.Empty(t, server.memberships)
 		assert.True(t, server.IsRegistered(client.ID()))
 	})
@@ -166,7 +192,7 @@ func TestLeave(t *testing.T) {
 	t.Run("unknown or unauthenticated client returns an error", func(t *testing.T) {
 		server := NewServer()
 		client := newFakeClient(1)
-		room := NewRoom("general")
+		room := RoomID("general")
 
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
@@ -175,8 +201,8 @@ func TestLeave(t *testing.T) {
 		assert.ErrorIs(t, err, ErrClientNotFound)
 		connectClients(t, server, newFakeClient(2))
 		assert.ErrorIs(t, server.Leave(2), ErrUnregisteredClient)
-		assert.Same(t, room, server.RoomOf(client.ID()))
-		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
+		assertRoomOf(t, server, client.ID(), room)
+		assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 	})
 }
 
@@ -200,22 +226,23 @@ func TestDisconnect(t *testing.T) {
 	t.Run("remove membership", func(t *testing.T) {
 		server := NewServer()
 		client := newFakeClient(1)
-		room := NewRoom("general")
+		room := RoomID("general")
 
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, client, "Josh")
 
 		err := server.Disconnect(client.ID())
 		require.NoError(t, err)
-		assert.Nil(t, server.RoomOf(client.ID()))
-		assert.Empty(t, server.memberships[room.ID()])
+		assertNoRoom(t, server, client.ID())
+		assert.Empty(t, server.memberships[room])
+		assert.True(t, server.RoomExists(room))
 	})
 }
 
 func TestBroadcast(t *testing.T) {
 	t.Run("broadcasts to all client in that room", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		client := newFakeClient(1)
 		sameRoomClient := newFakeClient(2)
 		outsider := newFakeClient(3)
@@ -229,7 +256,7 @@ func TestBroadcast(t *testing.T) {
 		err := server.HandleMessage(client.ID(), content)
 		require.NoError(t, err)
 
-		expected := fmt.Sprintf("MSG %s %s %s", room.ID(), "Josh", content)
+		expected := fmt.Sprintf("MSG %s %s %s", room, "Josh", content)
 
 		assert.Equal(t, expected, client.inbox[0])
 		assert.Equal(t, expected, sameRoomClient.inbox[0])
@@ -238,8 +265,8 @@ func TestBroadcast(t *testing.T) {
 
 	t.Run("room switch updates broadcast recipients", func(t *testing.T) {
 		server := NewServer()
-		roomA := NewRoom("A")
-		roomB := NewRoom("B")
+		roomA := RoomID("A")
+		roomB := RoomID("B")
 		sender := newFakeClient(1)
 		formerRoommate := newFakeClient(2)
 		newRoommate := newFakeClient(3)
@@ -248,7 +275,7 @@ func TestBroadcast(t *testing.T) {
 		registerAndJoin(t, server, roomA, formerRoommate, "Old")
 		registerAndJoin(t, server, roomB, newRoommate, "New")
 
-		require.NoError(t, server.Join(sender.ID(), roomB.ID()))
+		require.NoError(t, server.Join(sender.ID(), roomB))
 		require.NoError(t, server.HandleMessage(sender.ID(), "hello"))
 		assert.Equal(t, []string{"MSG B Josh hello"}, sender.inbox)
 		assert.Equal(t, []string{"MSG B Josh hello"}, newRoommate.inbox)
@@ -288,7 +315,7 @@ func TestBroadcast(t *testing.T) {
 func TestConcurrentJoin(t *testing.T) {
 	server := NewServer()
 	client := newFakeClient(1)
-	rooms := []*Room{NewRoom("A"), NewRoom("B")}
+	rooms := []RoomID{"A", "B"}
 	addRooms(t, server, rooms...)
 	connectAndRegister(t, server, client, "Josh")
 
@@ -297,10 +324,10 @@ func TestConcurrentJoin(t *testing.T) {
 	var wg sync.WaitGroup
 	for i, room := range rooms {
 		wg.Add(1)
-		go func(i int, room *Room) {
+		go func(i int, room RoomID) {
 			defer wg.Done()
 			<-start
-			errs[i] = server.Join(client.ID(), room.ID())
+			errs[i] = server.Join(client.ID(), room)
 		}(i, room)
 	}
 	close(start)
@@ -309,19 +336,33 @@ func TestConcurrentJoin(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	currentRoom := server.RoomOf(client.ID())
-	require.NotNil(t, currentRoom)
-	assert.Same(t, server.rooms[currentRoom.ID()], currentRoom)
+	currentRoom, inRoom := server.RoomOf(client.ID())
+	require.True(t, inRoom)
+	require.Contains(t, rooms, currentRoom)
 	for _, room := range rooms {
 		if room == currentRoom {
-			assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room.ID()])
+			assert.Equal(t, map[ClientID]struct{}{client.ID(): {}}, server.memberships[room])
 		} else {
-			assert.Empty(t, server.memberships[room.ID()])
+			assert.Empty(t, server.memberships[room])
 		}
 	}
 }
 
 // ==== HELPER FUNCTIONS
+
+func assertRoomOf(t testing.TB, s *Server, clientID ClientID, expected RoomID) {
+	t.Helper()
+	roomID, inRoom := s.RoomOf(clientID)
+	require.True(t, inRoom)
+	assert.Equal(t, expected, roomID)
+}
+
+func assertNoRoom(t testing.TB, s *Server, clientID ClientID) {
+	t.Helper()
+	roomID, inRoom := s.RoomOf(clientID)
+	assert.False(t, inRoom)
+	assert.Equal(t, RoomID(""), roomID)
+}
 
 func connectClients(t testing.TB, s *Server, clients ...Client) {
 	t.Helper()
@@ -336,21 +377,21 @@ func connectAndRegister(t testing.TB, s *Server, client Client, username string)
 	require.NoError(t, s.Register(client.ID(), username))
 }
 
-func joinRoom(t testing.TB, s *Server, room *Room, clients ...Client) {
+func joinRoom(t testing.TB, s *Server, room RoomID, clients ...Client) {
 	t.Helper()
 	for _, c := range clients {
-		err := s.Join(c.ID(), room.ID())
+		err := s.Join(c.ID(), room)
 		require.NoError(t, err)
 	}
 }
 
-func registerAndJoin(t testing.TB, s *Server, room *Room, client Client, username string) {
+func registerAndJoin(t testing.TB, s *Server, room RoomID, client Client, username string) {
 	t.Helper()
 	connectAndRegister(t, s, client, username)
 	joinRoom(t, s, room, client)
 }
 
-func addRooms(t testing.TB, s *Server, rooms ...*Room) {
+func addRooms(t testing.TB, s *Server, rooms ...RoomID) {
 	t.Helper()
 	for _, r := range rooms {
 		err := s.AddRoom(r)

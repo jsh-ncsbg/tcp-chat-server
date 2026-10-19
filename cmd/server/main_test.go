@@ -14,7 +14,7 @@ func TestDefaultServer(t *testing.T) {
 	ids := []chat.RoomID{"general", "breakout-1", "breakout-2", "breakout-3", "breakout-4", "breakout-5"}
 	for _, id := range ids {
 		require.True(t, server.RoomExists(id))
-		assert.ErrorIs(t, server.AddRoom(chat.NewRoom(id)), chat.ErrDuplicateRoom)
+		assert.ErrorIs(t, server.AddRoom(id), chat.ErrDuplicateRoom)
 	}
 	assert.False(t, server.RoomExists("breakout-0"))
 	assert.False(t, server.RoomExists("breakout-6"))

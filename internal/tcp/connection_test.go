@@ -108,7 +108,7 @@ func TestConnectionCommandRecovery(t *testing.T) {
 		assert.True(t, strings.HasPrefix(response, "ERR "+tt.code+" "), response)
 	}
 	assert.False(t, server.IsRegistered(1))
-	assert.Nil(t, server.RoomOf(1))
+	assertNoRoom(t, server, 1)
 
 	peer.exchange(t, "REGISTER Josh\r\n", "INFO OK REGISTER\n")
 	for _, tt := range []struct {
@@ -133,10 +133,11 @@ func TestConnectionCommandRecovery(t *testing.T) {
 	peer.exchange(t, "MSG still here\n", "MSG general Josh still here\n")
 	peer.send(t, "LEAVE general\n")
 	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR INVALID_ARGUMENTS "))
-	require.NotNil(t, server.RoomOf(1))
-	assert.Equal(t, chat.RoomID("general"), server.RoomOf(1).ID())
+	roomID, inRoom := server.RoomOf(1)
+	require.True(t, inRoom)
+	assert.Equal(t, chat.RoomID("general"), roomID)
 	peer.exchange(t, "LEAVE\r\n", "INFO OK LEAVE\n")
-	assert.Nil(t, server.RoomOf(1))
+	assertNoRoom(t, server, 1)
 	peer.exchange(t, "LEAVE \t\n", "INFO OK LEAVE\n")
 	peer.send(t, "MSG roomless\n")
 	assert.True(t, strings.HasPrefix(peer.receive(t), "ERR NOT_IN_ROOM "))
@@ -275,8 +276,9 @@ func TestConnectionDuplicateID(t *testing.T) {
 	_, err := peer.conn.Read(make([]byte, 1))
 	assert.ErrorIs(t, err, io.EOF)
 	assert.True(t, server.IsRegistered(1))
-	require.NotNil(t, server.RoomOf(1))
-	assert.Equal(t, chat.RoomID("general"), server.RoomOf(1).ID())
+	roomID, inRoom := server.RoomOf(1)
+	require.True(t, inRoom)
+	assert.Equal(t, chat.RoomID("general"), roomID)
 	original.exchange(t, "MSG still connected\n", "MSG general Josh still connected\n")
 }
 

@@ -115,7 +115,8 @@ func dialTestListener(t *testing.T, server *chat.Server, listener net.Listener, 
 	t.Cleanup(func() {
 		conn.Close()
 		assert.Eventually(t, func() bool {
-			return !server.IsRegistered(id) && server.RoomOf(id) == nil
+			_, inRoom := server.RoomOf(id)
+			return !server.IsRegistered(id) && !inRoom
 		}, clientTestTimeout, time.Millisecond)
 	})
 	require.NoError(t, conn.SetDeadline(time.Now().Add(clientTestTimeout)))

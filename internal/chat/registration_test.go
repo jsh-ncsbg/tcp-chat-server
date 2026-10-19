@@ -109,13 +109,13 @@ func TestUnauthenticatedRoomOperations(t *testing.T) {
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			server := NewServer()
-			room := NewRoom("general")
+			room := RoomID("general")
 			addRooms(t, server, room)
 			connectClients(t, server, newFakeClient(1))
 			assert.ErrorIs(t, operation.run(server, 1), ErrUnregisteredClient)
 			assert.ErrorIs(t, operation.run(server, 2), ErrClientNotFound)
-			assert.Nil(t, server.RoomOf(1))
-			assert.Empty(t, server.memberships[room.ID()])
+			assertNoRoom(t, server, 1)
+			assert.Empty(t, server.memberships[room])
 		})
 	}
 }
@@ -140,24 +140,24 @@ func TestDisconnectLifecycle(t *testing.T) {
 
 	t.Run("disconnect releases username and room membership", func(t *testing.T) {
 		server := NewServer()
-		room := NewRoom("general")
+		room := RoomID("general")
 		oldClient := newFakeClient(1)
 		addRooms(t, server, room)
 		registerAndJoin(t, server, room, oldClient, "Josh")
 
 		require.NoError(t, server.Disconnect(oldClient.ID()))
 		assert.False(t, server.IsRegistered(oldClient.ID()))
-		assert.Nil(t, server.RoomOf(oldClient.ID()))
-		assert.Empty(t, server.memberships[room.ID()])
+		assertNoRoom(t, server, oldClient.ID())
+		assert.Empty(t, server.memberships[room])
 		assert.False(t, server.usernameExists("Josh"))
 
 		replacement := newFakeClient(1)
 		connectClients(t, server, replacement)
 		assert.False(t, server.IsRegistered(replacement.ID()))
-		assert.Nil(t, server.RoomOf(replacement.ID()))
+		assertNoRoom(t, server, replacement.ID())
 		require.NoError(t, server.Register(replacement.ID(), "James"))
 		registerAndJoin(t, server, room, newFakeClient(2), "Josh")
-		require.NoError(t, server.Join(replacement.ID(), room.ID()))
+		require.NoError(t, server.Join(replacement.ID(), room))
 		require.NoError(t, server.HandleMessage(replacement.ID(), "hello"))
 		assert.Empty(t, oldClient.inbox)
 		assert.Equal(t, []string{"MSG general James hello"}, replacement.inbox)

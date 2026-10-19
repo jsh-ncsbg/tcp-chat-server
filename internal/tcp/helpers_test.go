@@ -128,14 +128,21 @@ func (p *connectionPeer) exchange(t *testing.T, command, response string) {
 	assert.Equal(t, response, p.receive(t))
 }
 
+func assertNoRoom(t testing.TB, server *chat.Server, id chat.ClientID) {
+	t.Helper()
+	roomID, inRoom := server.RoomOf(id)
+	assert.False(t, inRoom)
+	assert.Equal(t, chat.RoomID(""), roomID)
+}
+
 func assertConnectionRemoved(t *testing.T, server *chat.Server, id chat.ClientID, username string) {
 	t.Helper()
 	assert.False(t, server.IsRegistered(id))
-	assert.Nil(t, server.RoomOf(id))
+	assertNoRoom(t, server, id)
 	require.NoError(t, server.Connect(&cleanupProbe{id: id}))
 	defer server.Disconnect(id)
 	require.NoError(t, server.Register(id, username))
-	assert.Nil(t, server.RoomOf(id))
+	assertNoRoom(t, server, id)
 	assert.ErrorIs(t, server.HandleMessage(id, "roomless"), chat.ErrNotInRoom)
 }
 
@@ -143,7 +150,7 @@ func newTestServer(t *testing.T) *chat.Server {
 	t.Helper()
 	server := chat.NewServer()
 	for _, id := range []chat.RoomID{"general", "breakout-1"} {
-		require.NoError(t, server.AddRoom(chat.NewRoom(id)))
+		require.NoError(t, server.AddRoom(id))
 	}
 	return server
 }
