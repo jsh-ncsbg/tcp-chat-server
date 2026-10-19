@@ -83,13 +83,14 @@ func TestRegister(t *testing.T) {
 
 	t.Run("names are exact and only empty names are rejected", func(t *testing.T) {
 		server := NewServer()
-		for i, username := range []string{"Josh", "josh", " Josh ", " "} {
+		usernames := []string{"Josh", "josh", " Josh ", " "}
+		for i, username := range usernames {
 			id := ClientID(i + 1)
 			connectAndRegister(t, server, newFakeClient(id), username)
 			assert.True(t, server.IsRegistered(id))
 			assert.Equal(t, username, server.clients[id].username)
 		}
-		assert.Len(t, server.usernames, 4)
+		assert.Len(t, server.usernames, len(usernames))
 	})
 }
 
@@ -178,7 +179,7 @@ func TestConcurrentRegister(t *testing.T) {
 			}
 
 			start := make(chan struct{})
-			errs := make([]error, 2)
+			errs := make([]error, len(ids))
 			var wg sync.WaitGroup
 			for i := range ids {
 				wg.Add(1)

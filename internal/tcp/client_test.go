@@ -95,7 +95,8 @@ func TestClientCloseBlockedWriter(t *testing.T) {
 	client := NewClient(1, &clientTestConn{
 		Conn: conn,
 		write: func(p []byte) (int, error) {
-			if writes.Add(1) == 1 {
+			writes.Add(1)
+			if string(p) == "INFO blocked\n" {
 				close(started)
 			}
 			return conn.Write(p)
@@ -183,12 +184,13 @@ func TestClientCloseResult(t *testing.T) {
 func TestClientConcurrentDeliverAndClose(t *testing.T) {
 	client, _ := newPipeClient(t)
 	const senders = 8
+	messagesPerSender := MsgBufferSize * 2
 	results := make(chan error, senders+1)
 	start := make(chan struct{})
 	for i := 0; i < senders; i++ {
 		go func() {
 			<-start
-			for j := 0; j < 128; j++ {
+			for j := 0; j < messagesPerSender; j++ {
 				err := client.Deliver(chat.NewInfoResponse("hello"))
 				if err != nil && !errors.Is(err, ErrQueueFull) && !errors.Is(err, ErrClientClosed) {
 					results <- err

@@ -203,12 +203,15 @@ func TestConnectionQuitInterruptsBlockedWriter(t *testing.T) {
 	server := newTestServer(t)
 	conn, remote := newTestPipe(t)
 	started := make(chan struct{})
-	var writes atomic.Int32
+	var pendingWrites atomic.Int32
 	peer := startConnectionPeer(t, server, 1, &clientTestConn{
 		Conn: conn,
 		write: func(p []byte) (int, error) {
-			if writes.Add(1) == 3 {
+			if string(p) == "MSG general Josh blocked\n" {
 				close(started)
+			}
+			if string(p) == "MSG general Josh pending\n" {
+				pendingWrites.Add(1)
 			}
 			return conn.Write(p)
 		},
@@ -227,7 +230,7 @@ func TestConnectionQuitInterruptsBlockedWriter(t *testing.T) {
 	require.NoError(t, awaitClientResult(t, peer.result))
 	_, err := peer.reader.ReadByte()
 	require.ErrorIs(t, err, io.EOF)
-	assert.Equal(t, int32(3), writes.Load())
+	assert.Zero(t, pendingWrites.Load(), "shutdown must not write pending responses")
 	assertConnectionRemoved(t, server, 1, "Josh")
 }
 
@@ -294,11 +297,10 @@ func TestConnectionWriteFailure(t *testing.T) {
 	server := newTestServer(t)
 	conn, remote := newTestPipe(t)
 	writeFailure := errors.New("injected write failure")
-	var writes atomic.Int32
 	peer := startConnectionPeer(t, server, 1, &clientTestConn{
 		Conn: conn,
 		write: func(p []byte) (int, error) {
-			if writes.Add(1) > 2 {
+			if string(p) == "MSG general Josh fail\n" {
 				return 0, writeFailure
 			}
 			return conn.Write(p)
@@ -344,7 +346,10 @@ func TestConnectionResponseQueueFull(t *testing.T) {
 	peer := newConnectionPeer(t, server, 1)
 	peer.register(t, "Josh")
 	peer.join(t, "general")
-	peer.send(t, strings.Repeat("JOIN general\n", MsgBufferSize+2))
+	const inFlightResponses = 1
+	const rejectedResponses = 1
+	requestsToOverflow := MsgBufferSize + inFlightResponses + rejectedResponses
+	peer.send(t, strings.Repeat("JOIN general\n", requestsToOverflow))
 
 	assert.ErrorIs(t, awaitClientResult(t, peer.result), ErrQueueFull)
 	assertConnectionRemoved(t, server, 1, "Josh")
